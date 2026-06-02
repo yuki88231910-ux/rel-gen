@@ -55,6 +55,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .desc-box.dragging{border-style:solid;border-color:#c8a8ff}
 .card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
 .card-add-btn:hover{background:#2277cc}
+/* "key" marker badge shown on flagged objects */
+.key-badge{position:absolute;top:-11px;left:-11px;width:23px;height:23px;display:flex;align-items:center;justify-content:center;font-size:12px;background:#f5c518;border:2px solid #0d0d1a;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.55);line-height:1}
 .card.shape-circle{border-radius:50%;width:110px;height:110px;padding:8px}
 .card.shape-bubble{border-radius:12px}
 .card.shape-bubble::after{content:'';position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);border:7px solid transparent;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
@@ -461,6 +463,16 @@ function openAlignMenu(x,y){
     {icon:'⬍',label:'上下に整列',action:()=>alignSel('distV')}
   ]);
 }
+// add/remove the 🔑 key badge on an element
+function setKeyBadge(el,hasKey){
+  let kb=el.querySelector('.key-badge');
+  if(hasKey){ if(!kb){kb=document.createElement('div');kb.className='key-badge';kb.textContent='🔑';el.appendChild(kb);} }
+  else if(kb)kb.remove();
+}
+// context-menu item to toggle the key marker on any object
+function keyMenuItem(obj){
+  return {icon:'🔑',label:obj.key?'キーを外す':'キーを設定',action:()=>{obj.key=!obj.key;render();}};
+}
 
 // ═══════════════════════════════════════
 //  UTILS
@@ -777,6 +789,7 @@ function updateCardEl(el,card){
   nm.style.fontSize=(13*(card.textScale||1))+'px';
   const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
   sb.style.fontSize=(11*(card.textScale||1))+'px';
+  setKeyBadge(el,card.key);
   // connect target highlight
   el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==card.id);
   // add-btn
@@ -824,6 +837,7 @@ function updateBranchEl(el,br){
   el.style.transform=(br.scale&&br.scale!==1)?`scale(${br.scale})`:'';
   el.querySelector('.branch-icon').textContent=br.icon||'⑂';
   el.querySelector('.branch-label').textContent=br.name||'';
+  setKeyBadge(el,br.key);
   el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==br.id);
   const ab=el.querySelector('.card-add-btn');
   if(ab)ab.style.display=S.connecting&&S.connecting.fromId===br.id?'none':'flex';
@@ -853,7 +867,7 @@ function renderLabels(){
     const mid=arrowMid(arr);
     if(!mid)return;
     let lbl=ex.get(arr.id);
-    const hasLabel=(arr.name||arr.icon);
+    const hasLabel=(arr.name||arr.icon||arr.key);
     if(hasLabel){
       if(!lbl){
         lbl=document.createElement('div');
@@ -863,7 +877,7 @@ function renderLabels(){
         elems.appendChild(lbl);
       } else ex.delete(arr.id);
       lbl.style.left=mid.x+'px';lbl.style.top=mid.y+'px';
-      lbl.textContent=(arr.name||'')+(arr.icon?' '+arr.icon:'');
+      lbl.textContent=((arr.key?'🔑 ':'')+(arr.name||'')+(arr.icon?' '+arr.icon:'')).trim();
     } else {
       if(lbl)lbl.remove();
     }
@@ -876,14 +890,23 @@ function descAnchor(owner,kind){
   if(kind==='card')return{x:owner.x+cardEffW(owner)/2,y:owner.y+cardEffH(owner)/2};
   if(kind==='branch')return{x:owner.x+20,y:owner.y+20};
   if(kind==='arrow')return arrowMid(owner);
+  if(kind==='image')return{x:owner.x+owner.w/2,y:owner.y+owner.h/2};
   return null;
 }
 function defaultDescOff(owner,kind){
   if(kind==='card')return{x:cardEffW(owner)/2+24,y:cardEffH(owner)/2+18};
   if(kind==='branch')return{x:30,y:34};
+  if(kind==='image')return{x:owner.w/2+20,y:owner.h/2+16};
   return{x:18,y:30};
 }
-function ownerByDescId(id){return cardById(id)||branchById(id)||arrById(id);}
+function ownerByDescId(id){return cardById(id)||branchById(id)||arrById(id)||S.images.find(i=>i.id===id);}
+function descKindOf(id){
+  if(cardById(id))return'card';
+  if(branchById(id))return'branch';
+  if(arrById(id))return'arrow';
+  if(S.images.find(i=>i.id===id))return'image';
+  return null;
+}
 function rectEdgePt(cx,cy,hw,hh,fromX,fromY){
   const dx=fromX-cx,dy=fromY-cy;
   if(!dx&&!dy)return{x:cx,y:cy};
@@ -898,6 +921,7 @@ function renderDescs(){
     S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
     S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
     S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
+    S.images.forEach(im=>{if(im.desc&&im.desc.trim())want.push({id:im.id,owner:im,kind:'image'});});
   }
   const ex=new Map();
   elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
@@ -962,9 +986,24 @@ function onDescCtx(e,id,kind){
     {icon:'↩',label:'位置をリセット',action:()=>{owner.descOff=defaultDescOff(owner,kind);renderDescs();}},
     'sep',
     {icon:'✏️',label:'解説を編集',action:()=>{
-      if(kind==='card')openCardEditor(id);else if(kind==='branch')openBranchEditor(id);else openArrowEditor(id);
+      if(kind==='card')openCardEditor(id);else if(kind==='branch')openBranchEditor(id);
+      else if(kind==='image')openDescInput(id);else openArrowEditor(id);
     }}
   ]);
+}
+// simple textarea modal to edit an object's description (used for images, which have no full editor)
+function openDescInput(id){
+  const o=ownerByDescId(id);if(!o)return;
+  showModal(`
+    <h2>解説を編集</h2>
+    <div class="fg"><label>解説（改行可）</label><textarea id="di-desc" style="min-height:120px">${esc(o.desc||'')}</textarea></div>
+    <div class="mact">
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="di-save">保存</button>
+    </div>
+  `,()=>{
+    document.getElementById('di-save').onclick=()=>{o.desc=document.getElementById('di-desc').value;hideModal();render();};
+  });
 }
 
 // ── SUBTITLES ──
@@ -981,10 +1020,11 @@ function renderSubtitles(){
       elems.appendChild(el);
     } else ex.delete(st.id);
     el.style.left=st.x+'px';el.style.top=st.y+'px';
-    el.textContent=st.text||'サブタイトル';
+    el.textContent=st.text||'サブタイトル';   // (wipes children → set badge after)
     el.style.fontSize=(st.size||22)+'px';
     el.style.color=st.color||'#ffffff';
     el.style.borderColor=st.borderColor||'#c8a8ff';
+    setKeyBadge(el,st.key);
   });
   ex.forEach(e=>e.remove());
 }
@@ -1005,6 +1045,7 @@ function renderImages(){
     el.style.left=im.x+'px';el.style.top=im.y+'px';
     const img=el.querySelector('img');
     img.src=im.src;img.style.width=im.w+'px';img.style.height=im.h+'px';
+    setKeyBadge(el,im.key);
   });
   ex.forEach(e=>e.remove());
 }
@@ -1504,6 +1545,7 @@ function onCardCtx(e,id){
     {slider:true,label:'文字サイズ',min:.5,max:3,step:.05,value:card.textScale||1,oninput:v=>{card.textScale=v;render();}},
     {icon:'↩',label:'サイズをリセット',action:()=>{card.scale=1;card.textScale=1;render();}},
     'sep',
+    keyMenuItem(card),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteCard(id)}
   ]);
 }
@@ -1515,13 +1557,16 @@ function onBranchCtx(e,id){
     {slider:true,label:'サイズ',min:.4,max:5,step:.05,value:br.scale||1,oninput:v=>{br.scale=v;render();}},
     {icon:'↩',label:'サイズをリセット',action:()=>{br.scale=1;render();}},
     'sep',
+    keyMenuItem(br),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteBranch(id)}
   ]);
 }
 function onArrowCtx(e,id){
+  const arr=arrById(id);if(!arr)return;
   showCtx(e.clientX,e.clientY,[
     {icon:'✏️',label:'矢印を編集',action:()=>openArrowEditor(id)},
     'sep',
+    keyMenuItem(arr),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteArrow(id)}
   ]);
 }
@@ -1531,6 +1576,7 @@ function onSubtitleCtx(e,id){
     {icon:'✏️',label:'編集',action:()=>openSubtitleEditor(id)},
     {slider:true,label:'文字サイズ',min:10,max:120,step:1,value:st.size||22,fmt:v=>Math.round(v)+'px',oninput:v=>{st.size=v;render();}},
     'sep',
+    keyMenuItem(st),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteSubtitle(id)}
   ]);
 }
@@ -1538,8 +1584,10 @@ function onImageCtx(e,id){
   const im=S.images.find(i=>i.id===id);if(!im)return;
   const ar=im.h/im.w; // keep aspect ratio while sliding
   showCtx(e.clientX,e.clientY,[
+    {icon:'✏️',label:im.desc?'解説を編集':'解説を追加',action:()=>openDescInput(id)},
     {slider:true,label:'画像サイズ',min:40,max:1400,step:5,value:Math.round(im.w),fmt:v=>Math.round(v)+'px',oninput:v=>{im.w=v;im.h=v*ar;render();}},
     'sep',
+    keyMenuItem(im),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteImage(id)}
   ]);
 }
