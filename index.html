@@ -74,11 +74,13 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 /* ── SUBTITLES ── */
 .subtitle{position:absolute;background:rgba(0,0,0,.55);border:3px solid #c8a8ff;padding:8px 18px;border-radius:8px;font-size:22px;font-weight:bold;color:#fff;cursor:pointer;z-index:25;white-space:nowrap;text-shadow:0 2px 6px rgba(0,0,0,.7)}
 .subtitle:hover{border-color:#e8c8ff}
+.subtitle.selected{outline:3px solid #4af;outline-offset:2px;box-shadow:0 0 18px rgba(74,160,255,.6)}
 
 /* ── IMAGES ── */
 .imgel{position:absolute;cursor:pointer;z-index:6}
 .imgel img{display:block;border-radius:6px;pointer-events:none}
 .imgel:hover{outline:2px solid rgba(255,255,255,.4)}
+.imgel.selected{outline:3px solid #4af;outline-offset:2px;box-shadow:0 0 18px rgba(74,160,255,.6)}
 
 /* ── MODAL ── */
 #modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000}
@@ -248,6 +250,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <button class="mbtn" id="btn-add-card">＋ カード追加</button>
   <button class="mbtn" id="btn-branch-mode">⑂ 分岐ノード</button>
   <button class="mbtn" id="btn-add-subtitle">T サブタイトル</button>
+  <button class="mbtn" id="btn-align" title="複数選択(Ctrl+クリック)した要素を整列" disabled>⬓ 配置 ▾</button>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
   <div class="menu-sep"></div>
@@ -306,6 +309,7 @@ const S = {
   dragging:null,     // {type,id,sx,sy,ox,oy,moved}
   panning:false, panSt:null,
   mouse:{x:0,y:0},   // canvas coords
+  selection:[],      // ids of multi-selected elements (Ctrl+Click)
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 
@@ -383,6 +387,79 @@ function updateUndoUI(){
   const u=document.getElementById('btn-undo'),r=document.getElementById('btn-redo');
   if(u)u.disabled=histIdx<=0&&!_dirty;
   if(r)r.disabled=_dirty||histIdx>=history.length-1;
+}
+
+// ═══════════════════════════════════════
+//  MULTI-SELECT (Ctrl+Click) & ALIGN / DISTRIBUTE
+// ═══════════════════════════════════════
+function selById(id){return cardById(id)||branchById(id)||S.subtitles.find(s=>s.id===id)||S.images.find(i=>i.id===id);}
+function isSelected(id){return S.selection.includes(id);}
+function toggleSelect(id){
+  const i=S.selection.indexOf(id);
+  if(i>=0)S.selection.splice(i,1); else S.selection.push(id);
+  applySelectionClasses();
+}
+function clearSelection(){ if(!S.selection.length)return; S.selection=[]; applySelectionClasses(); }
+function applySelectionClasses(){
+  S.selection=S.selection.filter(id=>!!selById(id)); // drop deleted
+  elems.querySelectorAll('.card,.branch,.subtitle,.imgel').forEach(el=>{
+    el.classList.toggle('selected', S.selection.includes(el.dataset.id));
+  });
+  updateAlignUI();
+}
+function updateAlignUI(){
+  const b=document.getElementById('btn-align');
+  if(b)b.disabled=S.selection.length<2;
+}
+// bounding box of a selectable element {node,w,h}; node.x/node.y is the top-left
+function elemBox(id){
+  const c=cardById(id); if(c)return{node:c,w:cardEffW(c),h:cardEffH(c)};
+  const b=branchById(id); if(b)return{node:b,w:40,h:40};
+  const s=S.subtitles.find(x=>x.id===id);
+  if(s){const el=elems.querySelector(`.subtitle[data-id="${id}"]`);return{node:s,w:el?el.offsetWidth:140,h:el?el.offsetHeight:44};}
+  const im=S.images.find(x=>x.id===id); if(im)return{node:im,w:im.w,h:im.h};
+  return null;
+}
+function alignSel(mode){
+  hideCtx();
+  const boxes=S.selection.map(elemBox).filter(Boolean);
+  if(boxes.length<2)return;
+  let minX=Infinity,minY=Infinity,maxR=-Infinity,maxB=-Infinity;
+  boxes.forEach(b=>{const n=b.node;minX=Math.min(minX,n.x);minY=Math.min(minY,n.y);maxR=Math.max(maxR,n.x+b.w);maxB=Math.max(maxB,n.y+b.h);});
+  const cx=(minX+maxR)/2, cy=(minY+maxB)/2;
+  if(mode==='left')       boxes.forEach(b=>b.node.x=minX);
+  else if(mode==='right') boxes.forEach(b=>b.node.x=maxR-b.w);
+  else if(mode==='centerH')boxes.forEach(b=>b.node.x=cx-b.w/2);
+  else if(mode==='top')   boxes.forEach(b=>b.node.y=minY);
+  else if(mode==='bottom')boxes.forEach(b=>b.node.y=maxB-b.h);
+  else if(mode==='middleV')boxes.forEach(b=>b.node.y=cy-b.h/2);
+  else if(mode==='distH'){
+    const s=[...boxes].sort((a,b)=>a.node.x-b.node.x);
+    const gap=(maxR-minX-s.reduce((t,b)=>t+b.w,0))/(s.length-1);
+    let cur=minX; s.forEach(b=>{b.node.x=cur;cur+=b.w+gap;});
+  }
+  else if(mode==='distV'){
+    const s=[...boxes].sort((a,b)=>a.node.y-b.node.y);
+    const gap=(maxB-minY-s.reduce((t,b)=>t+b.h,0))/(s.length-1);
+    let cur=minY; s.forEach(b=>{b.node.y=cur;cur+=b.h+gap;});
+  }
+  boxes.forEach(b=>{b.node.x=clampW(b.node.x);b.node.y=clampW(b.node.y);});
+  render();
+}
+function openAlignMenu(x,y){
+  if(S.selection.length<2)return;
+  showCtx(x,y,[
+    {icon:'⬅',label:'左揃え',action:()=>alignSel('left')},
+    {icon:'↔',label:'左右中央揃え',action:()=>alignSel('centerH')},
+    {icon:'➡',label:'右揃え',action:()=>alignSel('right')},
+    'sep',
+    {icon:'⬆',label:'上揃え',action:()=>alignSel('top')},
+    {icon:'↕',label:'上下中央揃え',action:()=>alignSel('middleV')},
+    {icon:'⬇',label:'下揃え',action:()=>alignSel('bottom')},
+    'sep',
+    {icon:'⬌',label:'左右に整列',action:()=>alignSel('distH')},
+    {icon:'⬍',label:'上下に整列',action:()=>alignSel('distV')}
+  ]);
 }
 
 // ═══════════════════════════════════════
@@ -487,6 +564,7 @@ function render(){
   updateTempArrow();
   updateHints();
   updateBgClass();
+  applySelectionClasses();
   scheduleCommit();
 }
 
@@ -994,6 +1072,9 @@ function onCardMousedown(e,id){
   if(e.button!==0)return;
   e.stopPropagation();
 
+  // Ctrl+Click → toggle multi-selection (no drag / no editor)
+  if(e.ctrlKey||e.metaKey){ toggleSelect(id); return; }
+
   // If connecting, try to connect
   if(S.connecting){
     if(S.connecting.fromId!==id){
@@ -1005,33 +1086,39 @@ function onCardMousedown(e,id){
   }
 
   const pt=s2c(e.clientX,e.clientY);
-  const node=getById(id)||S.subtitles.find(s=>s.id===id)||S.images.find(i=>i.id===id);
-  if(!node)return;
-  S.dragging={id,sx:pt.x,sy:pt.y,ox:node.x,oy:node.y,moved:false};
+  // drag the whole multi-selection if this element belongs to it; otherwise a single element
+  const groupMode = S.selection.length>1 && S.selection.includes(id);
+  let group;
+  if(groupMode){
+    group=S.selection.map(sid=>{const n=selById(sid);return n?{n,ox:n.x,oy:n.y}:null;}).filter(Boolean);
+  } else {
+    if(S.selection.length)clearSelection(); // plain click clears a multi-selection
+    const node=selById(id); if(!node)return;
+    group=[{n:node,ox:node.x,oy:node.y}];
+  }
+  let moved=false;
+  S.dragging={id,group:groupMode};
 
   const onMove=ev=>{
     const cp=s2c(ev.clientX,ev.clientY);
-    const dx=cp.x-S.dragging.sx,dy=cp.y-S.dragging.sy;
-    if(Math.abs(dx)>3||Math.abs(dy)>3)S.dragging.moved=true;
-    node.x=clampW(S.dragging.ox+dx);node.y=clampW(S.dragging.oy+dy);
-    // fast update
-    const el=elems.querySelector(`[data-id="${id}"]`);
-    if(el){el.style.left=node.x+'px';el.style.top=node.y+'px';}
+    const dx=cp.x-pt.x,dy=cp.y-pt.y;
+    if(Math.abs(dx)>3||Math.abs(dy)>3)moved=true;
+    group.forEach(g=>{
+      g.n.x=clampW(g.ox+dx);g.n.y=clampW(g.oy+dy);
+      const el=elems.querySelector(`[data-id="${g.n.id}"]`);
+      if(el){el.style.left=g.n.x+'px';el.style.top=g.n.y+'px';}
+    });
     renderArrows();renderLabels();renderZones();renderDescs();
   };
   const onUp=ev=>{
     window.removeEventListener('mousemove',onMove);
     window.removeEventListener('mouseup',onUp);
-    if(!S.dragging.moved){
-      // click → open editor
-      const card=cardById(id);
-      const br=branchById(id);
-      const st=S.subtitles.find(s=>s.id===id);
-      const im=S.images.find(i=>i.id===id);
+    if(!moved && !groupMode){
+      const card=cardById(id),br=branchById(id);
       if(card)openCardEditor(id);
       else if(br)openBranchEditor(id);
       // subtitle dblclick handles itself; image contextmenu
-    } else {
+    } else if(moved){
       scheduleCommit(); // record the move for undo
     }
     S.dragging=null;
@@ -1501,6 +1588,7 @@ wrap.addEventListener('mousedown',e=>{
   // Empty space (or middle button) → pan. Arrows handle their own clicks.
   if(e.button===1||(e.button===0&&!onElem&&!onArrow)){
     if(S.connecting){cancelConnect();return;}
+    if(e.button===0&&!e.ctrlKey)clearSelection(); // click empty space clears multi-selection
     S.panning=true;
     S.panSt={sx:e.clientX,sy:e.clientY,px:S.panX,py:S.panY};
     wrap.style.cursor='grabbing';
@@ -1572,6 +1660,10 @@ document.addEventListener('paste',e=>{
 document.getElementById('btn-add-card').onclick=addCard;
 document.getElementById('btn-undo').onclick=undo;
 document.getElementById('btn-redo').onclick=redo;
+document.getElementById('btn-align').onclick=function(){
+  const r=this.getBoundingClientRect();
+  openAlignMenu(r.left,r.bottom+4);
+};
 
 document.getElementById('btn-branch-mode').onclick=function(){
   S.mode=S.mode==='branch'?'normal':'branch';
