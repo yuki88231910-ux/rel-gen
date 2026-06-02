@@ -1,0 +1,1724 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<title>相互関係ジェネレーター</title>
+<style>
+*{box-sizing:border-box;margin:0;padding:0}
+body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column;user-select:none}
+
+/* ── MENUBAR ── */
+#menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:200;flex-wrap:wrap}
+#app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
+.menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
+.mbtn{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;font-family:inherit}
+.mbtn:hover{background:#2a2a6a;border-color:#6a6aaa}
+.mbtn.active{background:#6a3aaa;border-color:#9a6aff;color:#fff}
+.mbtn.danger:hover{background:#8b2020;border-color:#ff5555;color:#fff}
+.mbtn:disabled{opacity:.35;cursor:default;background:#15152e}
+.mbtn:disabled:hover{background:#15152e;border-color:#3a3a6a}
+#bg-sel{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 8px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+#bg-sel option{background:#1e1e4a}
+
+/* ── CANVAS ── */
+#canvas-wrap{flex:1;overflow:hidden;position:relative;cursor:default}
+#canvas-inner{position:absolute;top:0;left:0;transform-origin:0 0}
+
+/* backgrounds — applied to #canvas-wrap; size/position driven by pan & zoom */
+.bg-grid{background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px)}
+.bg-dots{background-image:radial-gradient(circle,rgba(255,255,255,.22) 1.4px,transparent 1.4px)}
+.bg-plain{background-image:none}
+
+#svg-layer{position:absolute;top:-8800px;left:-8800px;width:17600px;height:17600px;overflow:visible;pointer-events:none}
+#svg-layer .ahit{pointer-events:stroke;cursor:pointer}
+#svg-layer .avis{pointer-events:none}
+#temp-arrow{pointer-events:none}
+#elems{position:absolute;top:0;left:0}
+
+/* ── ZONES (svg) ── */
+
+/* ── CARDS ── */
+.card{position:absolute;min-width:110px;border-radius:12px;cursor:pointer;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:10px 12px;transition:box-shadow .15s;overflow:visible}
+.card:hover{box-shadow:0 0 0 2px rgba(255,255,255,.4),0 0 20px rgba(150,100,255,.3)}
+.card.selected{box-shadow:0 0 0 3px #fff,0 0 24px rgba(200,168,255,.5)!important}
+.card.conn-target{box-shadow:0 0 0 3px #4affaa,0 0 20px rgba(74,255,170,.4)!important;cursor:crosshair}
+.card-icon-wrap{font-size:32px;margin-bottom:4px;line-height:1}
+/* image fills the card width and shows large (preserves aspect, tall images capped) */
+/* pointer-events:none so the card (not the img) receives the drag, and no native image drag-ghost */
+.card-img{width:100%;height:auto;max-height:280px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
+.card.shape-circle .card-img{width:100%;height:100%;border-radius:50%;margin:0}
+.card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);word-break:break-all}
+.card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;word-break:break-all}
+/* unified draggable description box — always horizontal, linked by a dotted line */
+.desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;max-width:240px;white-space:pre-wrap;word-break:break-word;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)}
+.desc-box:hover{border-color:rgba(190,170,255,.9);background:rgba(16,16,40,.97)}
+.desc-box.dragging{border-style:solid;border-color:#c8a8ff}
+.card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
+.card-add-btn:hover{background:#2277cc}
+.card.shape-circle{border-radius:50%;width:110px;height:110px;padding:8px}
+.card.shape-bubble{border-radius:12px}
+.card.shape-bubble::after{content:'';position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);border:7px solid transparent;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
+
+/* ── BRANCH NODES ── */
+.branch{position:absolute;width:40px;height:40px;border-radius:50%;border:3px solid #fff;cursor:pointer;display:flex;align-items:center;justify-content:center;font-size:16px;font-weight:bold;z-index:15;overflow:visible;transition:box-shadow .15s}
+.branch:hover{box-shadow:0 0 0 2px rgba(255,255,255,.5)}
+.branch.selected{box-shadow:0 0 0 3px #fff,0 0 20px rgba(255,200,60,.6)!important}
+.branch.conn-target{box-shadow:0 0 0 3px #4affaa,0 0 20px rgba(74,255,170,.4)!important;cursor:crosshair}
+.branch .card-add-btn{top:-8px;right:-8px;width:18px;height:18px;font-size:11px}
+.branch-label{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:bold;color:#fff;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
+
+/* ── ARROW LABELS ── */
+.alabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,15,40,.88);border:1px solid rgba(255,255,255,.2);padding:4px 10px;border-radius:16px;font-size:12px;color:#e0e0ff;cursor:pointer;white-space:nowrap;z-index:30;transition:border-color .15s}
+.alabel:hover{border-color:rgba(150,100,255,.7);background:rgba(25,15,55,.95)}
+
+/* ── SUBTITLES ── */
+.subtitle{position:absolute;background:rgba(0,0,0,.55);border:3px solid #c8a8ff;padding:8px 18px;border-radius:8px;font-size:22px;font-weight:bold;color:#fff;cursor:pointer;z-index:25;white-space:nowrap;text-shadow:0 2px 6px rgba(0,0,0,.7)}
+.subtitle:hover{border-color:#e8c8ff}
+
+/* ── IMAGES ── */
+.imgel{position:absolute;cursor:pointer;z-index:6}
+.imgel img{display:block;border-radius:6px;pointer-events:none}
+.imgel:hover{outline:2px solid rgba(255,255,255,.4)}
+
+/* ── MODAL ── */
+#modal-overlay{position:fixed;inset:0;background:rgba(0,0,0,.65);display:none;align-items:center;justify-content:center;z-index:1000}
+#modal-overlay.show{display:flex}
+.modal{background:#14142e;border:1px solid #2a2a5a;border-radius:14px;padding:22px 24px;width:420px;max-width:95vw;max-height:88vh;overflow-y:auto;position:relative}
+.modal h2{margin-bottom:16px;color:#c8a8ff;font-size:15px;font-weight:bold}
+.fg{margin-bottom:12px}
+.fg label{display:block;font-size:11px;color:#888;margin-bottom:4px}
+.fg input[type=text],.fg input[type=number],.fg textarea,.fg select{width:100%;background:#0d0d24;border:1px solid #2a2a5a;color:#e0e0e0;padding:7px 9px;border-radius:6px;font-size:13px;font-family:inherit;outline:none}
+.fg input[type=text]:focus,.fg textarea:focus,.fg select:focus{border-color:#6a4aaa}
+.fg textarea{resize:vertical;min-height:70px}
+.fg input[type=color]{height:34px;padding:2px 4px;cursor:pointer;border-radius:6px;width:60px;background:#0d0d24;border:1px solid #2a2a5a}
+.color-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+.color-preset{width:26px;height:26px;border-radius:50%;cursor:pointer;border:3px solid transparent;transition:border-color .15s}
+.color-preset:hover,.color-preset.sel{border-color:#fff}
+.mact{display:flex;gap:8px;justify-content:flex-end;margin-top:16px;flex-wrap:wrap}
+.btn{padding:7px 16px;border-radius:7px;border:none;cursor:pointer;font-size:13px;font-family:inherit;transition:all .15s}
+.btn-p{background:#6a3aaa;color:#fff}.btn-p:hover{background:#8a5acc}
+.btn-s{background:#1e1e4a;color:#d0d0ff;border:1px solid #3a3a6a}.btn-s:hover{background:#2a2a6a}
+.btn-d{background:#6a1a1a;color:#ffaaaa;border:1px solid #aa3333}.btn-d:hover{background:#8a2020}
+
+/* icon grid */
+.icon-grid{display:grid;grid-template-columns:repeat(8,1fr);gap:5px;margin-top:6px}
+.icon-opt{background:#0d0d24;border:2px solid transparent;border-radius:6px;padding:6px 2px;text-align:center;cursor:pointer;font-size:18px;transition:border-color .12s}
+.icon-opt:hover{border-color:#6a4aaa}
+.icon-opt.sel{border-color:#c8a8ff}
+
+/* zone list */
+.zone-item{display:flex;align-items:center;gap:8px;background:#0d0d24;padding:8px;border-radius:8px;margin-bottom:7px}
+.zone-item input[type=color]{width:38px;height:28px;padding:2px;border-radius:4px;border:1px solid #2a2a5a;cursor:pointer;background:#0d0d24}
+.zone-item input[type=text]{flex:1;background:transparent;border:none;border-bottom:1px solid #2a2a5a;color:#e0e0e0;font-size:13px;padding:3px;outline:none;font-family:inherit}
+.zone-item .zcheck{width:18px;height:18px;cursor:pointer;accent-color:#c8a8ff;flex-shrink:0}
+.zone-del{background:none;border:none;color:#ff6666;cursor:pointer;font-size:16px;padding:0 4px;flex-shrink:0}
+
+/* arrow thickness btns */
+.thick-btns{display:flex;gap:6px;margin-top:6px}
+.thick-btn{padding:6px 12px;border-radius:6px;border:2px solid #2a2a5a;background:#0d0d24;color:#d0d0ff;cursor:pointer;font-size:12px;transition:all .15s}
+.thick-btn.sel{border-color:#c8a8ff;background:#2a1a4a}
+
+/* ── CONTEXT MENU ── */
+#ctx-menu{position:fixed;background:#14142e;border:1px solid #2a2a5a;border-radius:10px;padding:5px 0;z-index:2000;min-width:165px;box-shadow:0 6px 30px rgba(0,0,0,.6);display:none}
+.ctx-item{padding:8px 16px;cursor:pointer;font-size:13px;color:#d0d0ff;transition:background .12s;display:flex;align-items:center;gap:8px}
+.ctx-item:hover{background:#1e1e4a}
+.ctx-item.danger{color:#ff8888}
+.ctx-item.danger:hover{background:#2a1a1a}
+.ctx-sep{height:1px;background:#2a2a5a;margin:4px 0}
+.ctx-slider{padding:7px 16px 9px;display:flex;flex-direction:column;gap:5px;cursor:default}
+.ctx-slider .ctx-slabel{font-size:11px;color:#9a9ac0;display:flex;justify-content:space-between;gap:10px}
+.ctx-slider .ctx-sval{color:#c8b8ff;font-weight:bold}
+.ctx-slider input[type=range]{width:100%;accent-color:#9b7aff;cursor:ew-resize;margin:0}
+
+/* ── HINTS ── */
+.hint-bar{position:fixed;bottom:18px;left:50%;transform:translateX(-50%);background:rgba(10,10,40,.9);color:#d0d0ff;padding:9px 22px;border-radius:20px;font-size:13px;display:none;z-index:500;border:1px solid #4a4a8a;pointer-events:none}
+.hint-bar.show{display:block}
+
+/* scrollbar */
+::-webkit-scrollbar{width:5px}
+::-webkit-scrollbar-track{background:#0d0d24}
+::-webkit-scrollbar-thumb{background:#2a2a5a;border-radius:3px}
+
+/* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
+#boot-screen{position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
+  background:radial-gradient(circle at 50% 42%,#2c2458 0%,#161232 50%,#070611 100%);
+  perspective:720px;perspective-origin:50% 44%;cursor:pointer;
+  animation:bootFade .7s ease 4s forwards}
+#boot-screen.skip{animation:bootFade .35s ease forwards}
+/* moving reflective floor */
+#boot-floor{position:absolute;left:-20%;right:-20%;bottom:0;height:42%;
+  background:linear-gradient(180deg,transparent,rgba(120,100,220,.10) 40%,rgba(150,130,255,.16));
+  transform:rotateX(72deg);transform-origin:bottom center;
+  -webkit-mask-image:radial-gradient(ellipse 60% 100% at 50% 100%,#000,transparent 75%);
+          mask-image:radial-gradient(ellipse 60% 100% at 50% 100%,#000,transparent 75%)}
+#boot-grid{position:absolute;inset:0;
+  background-image:linear-gradient(rgba(150,130,255,.25) 1px,transparent 1px),linear-gradient(90deg,rgba(150,130,255,.25) 1px,transparent 1px);
+  background-size:46px 46px;animation:bootGridMove 2.4s linear 2}
+/* the rolling cube */
+.boot-roller{position:relative;transform-style:preserve-3d;animation:bootRoll 2.5s cubic-bezier(.42,0,.18,1) forwards;will-change:transform}
+.boot-cube{position:relative;width:92px;height:92px;transform-style:preserve-3d;animation:bootSpin 2.5s cubic-bezier(.34,0,.16,1) forwards;filter:drop-shadow(0 12px 26px rgba(120,90,230,.55))}
+.bc-face{position:absolute;width:92px;height:92px;border-radius:10px;
+  background:linear-gradient(135deg,#8e7ce0 0%,#6450b8 45%,#3f3192 100%);
+  border:2px solid rgba(200,185,255,.85);
+  box-shadow:inset 0 0 22px rgba(20,10,60,.6),inset 0 0 0 9px rgba(255,255,255,.07)}
+/* little inset square that reads like the GC cube's recessed face */
+.bc-face::after{content:'';position:absolute;inset:24px;border-radius:5px;
+  background:linear-gradient(135deg,rgba(255,255,255,.16),rgba(255,255,255,0));
+  box-shadow:inset 0 0 12px rgba(20,10,60,.5)}
+.bc-front {transform:translateZ(46px)}
+.bc-back  {transform:rotateY(180deg) translateZ(46px)}
+.bc-right {transform:rotateY(90deg)  translateZ(46px)}
+.bc-left  {transform:rotateY(-90deg) translateZ(46px)}
+.bc-top   {transform:rotateX(90deg)  translateZ(46px)}
+.bc-bottom{transform:rotateX(-90deg) translateZ(46px)}
+/* per-face shading so the cube reads as 3D */
+.bc-top   {filter:brightness(1.35)}
+.bc-bottom{filter:brightness(.55)}
+.bc-left  {filter:brightness(.72)}
+.bc-right {filter:brightness(.86)}
+.bc-back  {filter:brightness(.7)}
+/* logo + tagline */
+#boot-logo{position:absolute;left:0;right:0;bottom:16%;text-align:center;opacity:0;animation:bootLogo 1s cubic-bezier(.2,.8,.2,1) 2.35s forwards}
+#boot-logo .bl-main{font-size:30px;font-weight:900;letter-spacing:2px;
+  background:linear-gradient(90deg,#c8b5ff,#fff,#a98cff);-webkit-background-clip:text;background-clip:text;color:transparent;
+  text-shadow:0 0 30px rgba(160,120,255,.6)}
+#boot-logo .bl-sub{margin-top:8px;font-size:12px;letter-spacing:6px;color:#9b8ad6;text-transform:uppercase}
+#boot-skip{position:absolute;bottom:26px;font-size:11px;letter-spacing:2px;color:rgba(180,170,230,.5);animation:bootBlink 1.4s ease-in-out 4;animation-delay:1s}
+@keyframes bootRoll{
+  0%  {transform:translate(-44vw,-180px) }
+  12% {transform:translate(-34vw,0)      }
+  26% {transform:translate(-24vw,-90px)  }
+  40% {transform:translate(-14vw,0)      }
+  52% {transform:translate(-7vw,-48px)   }
+  64% {transform:translate(0,0)          }
+  72% {transform:translate(0,-18px)      }
+  80% {transform:translate(0,0) scale(1) }
+  100%{transform:translate(0,-6px) scale(1.35)}
+}
+@keyframes bootSpin{
+  0%  {transform:rotateX(-30deg) rotateY(0)       rotateZ(0)}
+  64% {transform:rotateX(380deg) rotateY(330deg)  rotateZ(0)}
+  100%{transform:rotateX(388deg) rotateY(405deg)  rotateZ(0)}
+}
+@keyframes bootGridMove{from{background-position:0 0}to{background-position:0 46px}}
+@keyframes bootLogo{0%{opacity:0;transform:translateY(18px) scale(.92)}100%{opacity:1;transform:translateY(0) scale(1)}}
+@keyframes bootFade{to{opacity:0;visibility:hidden;pointer-events:none}}
+@keyframes bootBlink{0%,100%{opacity:.25}50%{opacity:.7}}
+@media (prefers-reduced-motion:reduce){
+  #boot-screen{animation:bootFade .4s ease .6s forwards}
+  .boot-roller,.boot-cube,#boot-grid{animation:none}
+  #boot-logo{animation:bootLogo .4s ease .1s forwards}
+}
+</style>
+</head>
+<body>
+
+<div id="boot-screen">
+  <div id="boot-grid"></div>
+  <div id="boot-floor"></div>
+  <div class="boot-roller">
+    <div class="boot-cube">
+      <div class="bc-face bc-front"></div>
+      <div class="bc-face bc-back"></div>
+      <div class="bc-face bc-right"></div>
+      <div class="bc-face bc-left"></div>
+      <div class="bc-face bc-top"></div>
+      <div class="bc-face bc-bottom"></div>
+    </div>
+  </div>
+  <div id="boot-logo">
+    <div class="bl-main">相互関係ジェネレーター</div>
+    <div class="bl-sub">Relationship Mapper</div>
+  </div>
+  <div id="boot-skip">CLICK TO SKIP</div>
+</div>
+
+<div id="menubar">
+  <span id="app-title">◈ 相互関係ジェネレーター</span>
+  <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-undo" title="元に戻す (Ctrl+Z)" disabled>↶ 戻る</button>
+  <button class="mbtn" id="btn-redo" title="やり直し (Ctrl+Y)" disabled>↷ 進む</button>
+  <div class="menu-sep"></div>
+  <select id="bg-sel" title="背景">
+    <option value="grid">方眼紙</option>
+    <option value="dots">方眼ドット</option>
+    <option value="plain">無地</option>
+  </select>
+  <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-add-card">＋ カード追加</button>
+  <button class="mbtn" id="btn-branch-mode">⑂ 分岐ノード</button>
+  <button class="mbtn" id="btn-add-subtitle">T サブタイトル</button>
+  <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
+  <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-save">💾 保存</button>
+  <button class="mbtn" id="btn-load">📂 読み込み</button>
+  <input type="file" id="file-input" style="display:none" accept=".json">
+  <div class="menu-sep"></div>
+  <button class="mbtn danger" id="btn-del-all">🗑 すべて削除</button>
+</div>
+
+<div id="canvas-wrap">
+  <div id="canvas-inner">
+    <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
+      <defs>
+        <marker id="ah" markerWidth="7" markerHeight="6" refX="6" refY="3" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L7,3 L0,6 Z" fill="context-stroke"/>
+        </marker>
+        <marker id="ah-sm" markerWidth="5" markerHeight="4" refX="4" refY="2" orient="auto" markerUnits="strokeWidth">
+          <path d="M0,0 L5,2 L0,4 Z" fill="context-stroke"/>
+        </marker>
+        <!-- "gooey" merge: card halos + connector arms fuse into one smooth organic zone blob -->
+        <filter id="zone-goo" x="-30%" y="-30%" width="160%" height="160%">
+          <feGaussianBlur in="SourceGraphic" stdDeviation="13" result="b"/>
+          <feColorMatrix in="b" mode="matrix" values="1 0 0 0 0  0 1 0 0 0  0 0 1 0 0  0 0 0 20 -8"/>
+        </filter>
+      </defs>
+      <g id="world" transform="translate(8800,8800)">
+        <g id="zones-g"></g>
+        <g id="desc-lines-g"></g>
+        <g id="arrows-g"></g>
+        <path id="temp-arrow" d="" stroke="rgba(255,255,255,.6)" stroke-width="2" stroke-dasharray="8,5" fill="none" marker-end="url(#ah)" display="none"/>
+      </g>
+    </svg>
+    <div id="elems"></div>
+  </div>
+</div>
+
+<div id="modal-overlay">
+  <div class="modal" id="modal-box"></div>
+</div>
+
+<div id="ctx-menu"></div>
+<div class="hint-bar" id="hint-conn">クリックで接続先を選択　Esc でキャンセル</div>
+<div class="hint-bar" id="hint-branch">⑂ 分岐モード：クリックで分岐ノードを配置　Esc でキャンセル</div>
+
+<script>
+'use strict';
+
+// ═══════════════════════════════════════
+//  STATE
+// ═══════════════════════════════════════
+const S = {
+  bg:'grid', zoom:1, panX:60, panY:60,
+  showDesc:true, mode:'normal',
+  connecting:null,   // {fromId}
+  dragging:null,     // {type,id,sx,sy,ox,oy,moved}
+  panning:false, panSt:null,
+  mouse:{x:0,y:0},   // canvas coords
+  cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
+};
+
+let _uid=0;
+const uid=()=>'n'+(++_uid)+'_'+Math.random().toString(36).slice(2,5);
+
+const PRESETS=['#e74c8b','#9b59b6','#3498db','#1abc9c','#27ae60','#f1c40f','#e67e22','#e74c3c','#607d8b','#ffffff'];
+const ICONS=['✦','☽','✸','★','♥','♦','⚡','♟','⚔','👑','💎','🔥','🌸','⚙️','?','!','◆','▲'];
+
+// ═══════════════════════════════════════
+//  DOM REFS
+// ═══════════════════════════════════════
+const wrap   = document.getElementById('canvas-wrap');
+const inner  = document.getElementById('canvas-inner');
+const svgL   = document.getElementById('svg-layer');
+const zonesG = document.getElementById('zones-g');
+const descLinesG = document.getElementById('desc-lines-g');
+const arrsG  = document.getElementById('arrows-g');
+const tempArr= document.getElementById('temp-arrow');
+const elems  = document.getElementById('elems');
+const modOv  = document.getElementById('modal-overlay');
+const modBox = document.getElementById('modal-box');
+const ctxMenu= document.getElementById('ctx-menu');
+const hintConn  = document.getElementById('hint-conn');
+const hintBranch= document.getElementById('hint-branch');
+
+// ═══════════════════════════════════════
+//  UNDO / REDO HISTORY
+// ═══════════════════════════════════════
+let history=[], histIdx=-1, _commitTimer=null, _suppressCommit=false, _dirty=false;
+const HIST_MAX=60;
+function docState(){
+  return JSON.stringify({cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
+    subtitles:S.subtitles,images:S.images,bg:S.bg,showDesc:S.showDesc});
+}
+function scheduleCommit(){
+  if(_suppressCommit)return;
+  _dirty=true;updateUndoUI();          // a change exists → undo becomes available immediately
+  clearTimeout(_commitTimer);
+  _commitTimer=setTimeout(commitNow,300); // coalesce rapid changes (slider drags etc.)
+}
+function commitNow(){
+  clearTimeout(_commitTimer);
+  if(_suppressCommit)return;
+  const snap=docState();
+  _dirty=false;
+  if(histIdx>=0&&history[histIdx]===snap){updateUndoUI();return;} // no real change
+  history=history.slice(0,histIdx+1);
+  history.push(snap);
+  if(history.length>HIST_MAX)history.shift();
+  histIdx=history.length-1;
+  updateUndoUI();
+}
+function applyState(snap){
+  const d=JSON.parse(snap);
+  S.cards=d.cards;S.arrows=d.arrows;S.branches=d.branches;S.zones=d.zones;
+  S.subtitles=d.subtitles;S.images=d.images;S.bg=d.bg;S.showDesc=d.showDesc;
+  _dirty=false;_suppressCommit=true;
+  render();
+  const bgSel=document.getElementById('bg-sel');if(bgSel)bgSel.value=S.bg;
+  const db=document.getElementById('btn-toggle-desc');if(db)db.classList.toggle('active',S.showDesc);
+  _suppressCommit=false;
+}
+function undo(){
+  commitNow();          // flush any pending change first
+  if(histIdx<=0)return;
+  histIdx--;applyState(history[histIdx]);updateUndoUI();
+}
+function redo(){
+  if(histIdx>=history.length-1)return;
+  histIdx++;applyState(history[histIdx]);updateUndoUI();
+}
+function resetHistory(){history=[];histIdx=-1;_dirty=false;commitNow();}
+function updateUndoUI(){
+  const u=document.getElementById('btn-undo'),r=document.getElementById('btn-redo');
+  if(u)u.disabled=histIdx<=0&&!_dirty;
+  if(r)r.disabled=_dirty||histIdx>=history.length-1;
+}
+
+// ═══════════════════════════════════════
+//  UTILS
+// ═══════════════════════════════════════
+function s2c(sx,sy){
+  const r=wrap.getBoundingClientRect();
+  return {x:(sx-r.left-S.panX)/S.zoom, y:(sy-r.top-S.panY)/S.zoom};
+}
+// Editable world — a large bounded sheet (no hard walls, but a generous limit)
+const WORLD_MAX=8000;      // elements can be placed within ±8000 (16000×16000 sheet)
+const WORLD_SLACK=600;     // how far past the world edge you may still scroll
+function clampW(v){return Math.max(-WORLD_MAX,Math.min(WORLD_MAX,v));}
+function clampPan(){
+  const r=wrap.getBoundingClientRect();
+  if(!r.width)return;
+  // Keep the visible window inside the world (+slack). screen = world*zoom + pan
+  const lim=(WORLD_MAX+WORLD_SLACK)*S.zoom;
+  const loX=r.width-lim, hiX=lim;
+  const loY=r.height-lim, hiY=lim;
+  S.panX=Math.min(Math.max(S.panX,Math.min(loX,hiX)),Math.max(loX,hiX));
+  S.panY=Math.min(Math.max(S.panY,Math.min(loY,hiY)),Math.max(loY,hiY));
+}
+function applyTf(){
+  clampPan();
+  inner.style.transform=`translate(${S.panX}px,${S.panY}px) scale(${S.zoom})`;
+  updateBgTransform();
+}
+function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+function svgE(tag,a){
+  const e=document.createElementNS('http://www.w3.org/2000/svg',tag);
+  for(const[k,v]of Object.entries(a))e.setAttribute(k,v);
+  return e;
+}
+function getById(id){return S.cards.find(c=>c.id===id)||S.branches.find(b=>b.id===id)}
+function cardById(id){return S.cards.find(c=>c.id===id)}
+function arrById(id){return S.arrows.find(a=>a.id===id)}
+function branchById(id){return S.branches.find(b=>b.id===id)}
+// Overall (whole-element) scale — affects the visual box AND arrow geometry
+function cScale(c){return c.scale||1;}
+function cardBaseH(c){return c.shape==='circle'?c.w:(c.h||90);}
+function cardEffW(c){return c.w*cScale(c);}
+function cardEffH(c){return cardBaseH(c)*cScale(c);}
+function branchR(b){return 20*(b.scale||1);}
+function cardH(c){return cardEffH(c);} // legacy alias
+function nodeCenter(id){
+  const c=cardById(id);
+  if(c)return{x:c.x+cardEffW(c)/2,y:c.y+cardEffH(c)/2};
+  const b=branchById(id);
+  if(b)return{x:b.x+20,y:b.y+20};
+  return null;
+}
+function nodeEdge(id,tx,ty){
+  const c=cardById(id);
+  if(c){
+    const ew=cardEffW(c),eh=cardEffH(c);
+    const cx=c.x+ew/2,cy=c.y+eh/2;
+    const dx=tx-cx,dy=ty-cy;
+    if(c.shape==='circle'){
+      const r=ew/2+6,l=Math.sqrt(dx*dx+dy*dy)||1;
+      return{x:cx+dx/l*r,y:cy+dy/l*r};
+    }
+    const hw=ew/2+7,hh=eh/2+7;
+    if(!dx&&!dy)return{x:cx,y:cy};
+    const sx=Math.abs(dx)>0?hw/Math.abs(dx):1e9;
+    const sy=Math.abs(dy)>0?hh/Math.abs(dy):1e9;
+    const sc=Math.min(sx,sy);
+    return{x:cx+dx*sc,y:cy+dy*sc};
+  }
+  const b=branchById(id);
+  if(b){
+    const cx=b.x+20,cy=b.y+20,R=branchR(b);
+    const dx=tx-cx,dy=ty-cy;
+    const l=Math.sqrt(dx*dx+dy*dy)||1;
+    return{x:cx+dx/l*R,y:cy+dy/l*R};
+  }
+  return null;
+}
+function bezMid(x1,y1,cpx,cpy,x2,y2){
+  return{x:.25*x1+.5*cpx+.25*x2,y:.25*y1+.5*cpy+.25*y2};
+}
+function getCP(x1,y1,x2,y2,curve){
+  const mx=(x1+x2)/2,my=(y1+y2)/2;
+  const dx=x2-x1,dy=y2-y1;
+  const l=Math.sqrt(dx*dx+dy*dy)||1;
+  const off=Math.min(l*.18,70)*curve;
+  return{cpx:mx-dy/l*off,cpy:my+dx/l*off};
+}
+
+// ═══════════════════════════════════════
+//  RENDER
+// ═══════════════════════════════════════
+function render(){
+  renderZones();
+  renderArrows();
+  renderCardDOMs();
+  renderBranchDOMs();
+  renderLabels();
+  renderSubtitles();
+  renderImages();
+  renderDescs();
+  updateTempArrow();
+  updateHints();
+  updateBgClass();
+  scheduleCommit();
+}
+
+function updateBgClass(){
+  wrap.classList.remove('bg-grid','bg-dots','bg-plain');
+  wrap.classList.add('bg-'+S.bg);
+  updateBgTransform();
+}
+// Grid/dots move & scale with the canvas so it feels like an infinite sheet
+function updateBgTransform(){
+  if(S.bg==='plain'){wrap.style.backgroundImage='';return;}
+  const base=S.bg==='dots'?28:40;
+  const sz=base*S.zoom;
+  wrap.style.backgroundSize=sz+'px '+sz+'px';
+  wrap.style.backgroundPosition=S.panX+'px '+S.panY+'px';
+}
+function updateHints(){
+  hintConn.classList.toggle('show',!!S.connecting&&S.mode==='normal');
+  hintBranch.classList.toggle('show',S.mode==='branch');
+}
+
+// ── ZONES ──
+function renderZones(){
+  zonesG.innerHTML='';
+  S.zones.forEach(z=>{
+    const members=S.cards.filter(c=>z.cardIds.includes(c.id));
+    if(!members.length)return;
+    const col=z.color||'#4a9eff';
+    // geometry of each member
+    const info=members.map(c=>{
+      const w=cardEffW(c),h=cardEffH(c);
+      return {x:c.x,y:c.y,w,h,cx:c.x+w/2,cy:c.y+h/2,md:Math.min(w,h)};
+    });
+    let mnx=Infinity,mny=Infinity;
+    info.forEach(d=>{mnx=Math.min(mnx,d.x);mny=Math.min(mny,d.y);});
+    // connect members into ONE flowing shape via a minimum spanning tree (arms follow the layout)
+    const edges=[];
+    if(info.length>1){
+      const inT=[0],rest=[];for(let i=1;i<info.length;i++)rest.push(i);
+      while(rest.length){
+        let best=null;
+        inT.forEach(i=>rest.forEach(j=>{
+          const d=(info[i].cx-info[j].cx)**2+(info[i].cy-info[j].cy)**2;
+          if(!best||d<best.d)best={i,j,d};
+        }));
+        edges.push([best.i,best.j]);inT.push(best.j);rest.splice(rest.indexOf(best.j),1);
+      }
+    }
+    // a goo layer = thick connector "arms" + rounded halos around each card, fused by the filter
+    const buildLayer=(pad,extra,op)=>{
+      const g=svgE('g',{filter:'url(#zone-goo)',opacity:op});
+      edges.forEach(([i,j])=>{
+        const t=Math.max(26,Math.min(78,Math.min(info[i].md,info[j].md)*0.5))+extra;
+        g.appendChild(svgE('line',{x1:info[i].cx,y1:info[i].cy,x2:info[j].cx,y2:info[j].cy,
+          stroke:col,'stroke-width':t,'stroke-linecap':'round'}));
+      });
+      info.forEach(d=>{
+        const x=d.x-pad,y=d.y-pad,w=d.w+pad*2,h=d.h+pad*2;
+        g.appendChild(svgE('rect',{x,y,width:w,height:h,rx:Math.min(44,Math.min(w,h)/2),ry:Math.min(44,Math.min(w,h)/2),fill:col}));
+      });
+      return g;
+    };
+    zonesG.appendChild(buildLayer(28,14,0.13)); // soft outer glow
+    zonesG.appendChild(buildLayer(19,0,0.30));  // main translucent blob
+    // name chip above the blob so it never hides behind a card
+    const name=z.name||'ゾーン';
+    const lx=mnx-4,ly=mny-34;
+    const t=svgE('text',{x:lx+9,y:ly,fill:'#fff','font-size':12,'font-weight':'bold'});
+    t.textContent=name;
+    zonesG.appendChild(t);
+    const tw=(t.getComputedTextLength&&t.getComputedTextLength())||name.length*12;
+    const chip=svgE('rect',{x:lx,y:ly-15,width:tw+18,height:21,rx:10,fill:hexAlpha(col,.92)});
+    zonesG.insertBefore(chip,t);
+  });
+}
+function hexAlpha(hex,a){
+  const r=parseInt(hex.slice(1,3),16),g=parseInt(hex.slice(3,5),16),b=parseInt(hex.slice(5,7),16);
+  return`rgba(${r},${g},${b},${a})`;
+}
+// rounded-rect SVG path (used to build zone regions with cut-out holes)
+function rrPath(x,y,w,h,r){
+  r=Math.max(0,Math.min(r,w/2,h/2));
+  return `M${x+r},${y} h${w-2*r} a${r},${r} 0 0 1 ${r},${r} v${h-2*r} a${r},${r} 0 0 1 ${-r},${r} h${-(w-2*r)} a${r},${r} 0 0 1 ${-r},${-r} v${-(h-2*r)} a${r},${r} 0 0 1 ${r},${-r} z`;
+}
+
+// ── ARROWS ──
+function renderArrows(){
+  // Reconcile SVG groups
+  const existing=new Map();
+  arrsG.querySelectorAll('[data-id]').forEach(g=>existing.set(g.dataset.id,g));
+
+  // Detect bidirectional pairs for curve direction
+  const pairMap={};
+  S.arrows.forEach(a=>{
+    const key=[a.from,a.to].sort().join('|');
+    if(!pairMap[key])pairMap[key]=[];
+    pairMap[key].push(a.id);
+  });
+
+  S.arrows.forEach(arr=>{
+    const p1=nodeCenter(arr.from),p2=nodeCenter(arr.to);
+    if(!p1||!p2)return;
+
+    const key=[arr.from,arr.to].sort().join('|');
+    const pair=pairMap[key];
+    let curve=arr.curve||0;
+    if(curve===0){
+      const idx=pair.indexOf(arr.id);
+      if(pair.length>1)curve=idx===0?1:-1;
+      else curve=0.4;
+    }
+
+    const e1=nodeEdge(arr.from,p2.x,p2.y)||p1;
+    const e2=nodeEdge(arr.to,p1.x,p1.y)||p2;
+    const{cpx,cpy}=getCP(e1.x,e1.y,e2.x,e2.y,curve);
+    const d=`M${e1.x},${e1.y} Q${cpx},${cpy} ${e2.x},${e2.y}`;
+
+    let g=existing.get(arr.id);
+    if(!g){
+      g=svgE('g',{'data-id':arr.id});
+      const hit=svgE('path',{class:'ahit','stroke-width':18,fill:'none',stroke:'transparent','data-arr-id':arr.id});
+      const vis=svgE('path',{class:'avis',fill:'none'});
+      g.appendChild(hit);g.appendChild(vis);
+      arrsG.appendChild(g);
+      hit.addEventListener('click',e=>onArrowHitClick(e,arr.id));
+      hit.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onArrowCtx(e,arr.id)});
+    } else existing.delete(arr.id);
+
+    const hit=g.children[0];const vis=g.children[1];
+    hit.setAttribute('d',d);
+    vis.setAttribute('d',d);
+    vis.setAttribute('stroke',arr.color||'#ffffff');
+    vis.setAttribute('stroke-width',arr.width||2);
+    vis.setAttribute('marker-end','url(#ah)');
+    if(arr.dashed)vis.setAttribute('stroke-dasharray','8,5');
+    else vis.removeAttribute('stroke-dasharray');
+  });
+  existing.forEach(g=>g.remove());
+}
+
+// ── CARDS DOM ──
+function renderCardDOMs(){
+  const ex=new Map();
+  elems.querySelectorAll('.card[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+  S.cards.forEach(card=>{
+    let el=ex.get(card.id);
+    if(!el){el=createCardEl(card);elems.appendChild(el);}
+    else{ex.delete(card.id);updateCardEl(el,card);}
+  });
+  ex.forEach(e=>e.remove());
+  // Sync h from actual rendered height (for arrow edge accuracy)
+  S.cards.forEach(c=>{
+    if(c.shape!=='circle'){
+      const el=elems.querySelector(`.card[data-id="${c.id}"]`);
+      if(el&&el.offsetHeight>0)c.h=el.offsetHeight;
+    }
+  });
+}
+function createCardEl(card){
+  const el=document.createElement('div');
+  el.className='card';el.dataset.id=card.id;
+  // + button
+  const ab=document.createElement('div');
+  ab.className='card-add-btn';ab.textContent='+';ab.title='ドラッグで矢印を接続';
+  ab.addEventListener('mousedown',e=>beginConnectDrag(card.id,e));
+  el.appendChild(ab);
+  // icon/img
+  const iw=document.createElement('div');iw.className='card-icon-wrap';el.appendChild(iw);
+  const img=document.createElement('img');img.className='card-img';img.draggable=false;el.appendChild(img);
+  // texts
+  const nm=document.createElement('div');nm.className='card-name';el.appendChild(nm);
+  const sb=document.createElement('div');sb.className='card-sub';el.appendChild(sb);
+  // events
+  el.addEventListener('mousedown',e=>onCardMousedown(e,card.id));
+  el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onCardCtx(e,card.id)});
+  updateCardEl(el,card);
+  return el;
+}
+function updateCardEl(el,card){
+  el.style.left=card.x+'px';el.style.top=card.y+'px';
+  el.style.width=card.w+'px';
+  if(card.shape==='circle')el.style.height=card.w+'px';
+  else el.style.height='';
+  // overall size = whole-card scale (keeps top-left anchored at x,y)
+  el.style.transformOrigin='top left';
+  el.style.transform=(card.scale&&card.scale!==1)?`scale(${card.scale})`:'';
+  el.className='card shape-'+card.shape;el.dataset.id=card.id;
+  el.style.background=card.color||'#9b59b6';
+  el.style.boxShadow=`0 6px 24px ${hexAlpha(card.color||'#9b59b6',.5)}`;
+  // bubble tail color
+  if(card.shape==='bubble')el.style.setProperty('--bc',card.color||'#9b59b6');
+  if(card.shape==='bubble'){
+    const s=el.style;
+    // pseudo-element trick: use outline filter
+    el.setAttribute('data-bubble-color',card.color||'#9b59b6');
+  }
+  const iw=el.querySelector('.card-icon-wrap');
+  const img=el.querySelector('.card-img');
+  if(card.image){
+    iw.style.display='none';img.style.display='block';
+    // only (re)assign src when it actually changes — avoids reloading/flicker on rapid re-renders (e.g. size slider)
+    if(img._src!==card.image){img._src=card.image;img.src=card.image;}
+  } else {
+    img.style.display='none';iw.style.display='block';
+    if(img._src){img._src=null;img.removeAttribute('src');}
+    iw.textContent=card.icon||'✦';
+    iw.style.fontSize=(22*(card.textScale||1))+'px';
+  }
+  const nm=el.querySelector('.card-name');nm.textContent=card.name||'';
+  nm.style.fontSize=(13*(card.textScale||1))+'px';
+  const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
+  sb.style.fontSize=(11*(card.textScale||1))+'px';
+  // connect target highlight
+  el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==card.id);
+  // add-btn
+  const ab=el.querySelector('.card-add-btn');
+  if(ab)ab.style.display=S.connecting&&S.connecting.fromId===card.id?'none':'flex';
+  // bubble after
+  if(card.shape==='bubble'){
+    // We inject a style tag with the card id for pseudo-element
+    let st=document.getElementById('bst-'+card.id);
+    if(!st){st=document.createElement('style');st.id='bst-'+card.id;document.head.appendChild(st);}
+    st.textContent=`.card[data-id="${card.id}"].shape-bubble::after{border-top-color:${card.color||'#9b59b6'}}`;
+  }
+}
+
+// ── BRANCHES DOM ──
+function renderBranchDOMs(){
+  const ex=new Map();
+  elems.querySelectorAll('.branch[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+  S.branches.forEach(br=>{
+    let el=ex.get(br.id);
+    if(!el){el=createBranchEl(br);elems.appendChild(el);}
+    else{ex.delete(br.id);updateBranchEl(el,br);}
+  });
+  ex.forEach(e=>e.remove());
+}
+function createBranchEl(br){
+  const el=document.createElement('div');
+  el.className='branch';el.dataset.id=br.id;
+  const ab=document.createElement('div');
+  ab.className='card-add-btn';ab.textContent='+';ab.title='ドラッグで矢印を接続';
+  ab.addEventListener('mousedown',e=>beginConnectDrag(br.id,e));
+  el.appendChild(ab);
+  const ico=document.createElement('div');ico.className='branch-icon';el.appendChild(ico);
+  const lbl=document.createElement('div');lbl.className='branch-label';el.appendChild(lbl);
+  el.addEventListener('mousedown',e=>onCardMousedown(e,br.id));
+  el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onBranchCtx(e,br.id)});
+  updateBranchEl(el,br);
+  return el;
+}
+function updateBranchEl(el,br){
+  el.style.left=br.x+'px';el.style.top=br.y+'px';
+  el.style.background=br.color||'#f0c040';
+  el.style.boxShadow=`0 4px 16px ${hexAlpha(br.color||'#f0c040',.5)}`;
+  el.style.transformOrigin='center center';
+  el.style.transform=(br.scale&&br.scale!==1)?`scale(${br.scale})`:'';
+  el.querySelector('.branch-icon').textContent=br.icon||'⑂';
+  el.querySelector('.branch-label').textContent=br.name||'';
+  el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==br.id);
+  const ab=el.querySelector('.card-add-btn');
+  if(ab)ab.style.display=S.connecting&&S.connecting.fromId===br.id?'none':'flex';
+}
+
+// Arrow midpoint (shared by labels & description anchors)
+function arrowMid(arr){
+  const p1=nodeCenter(arr.from),p2=nodeCenter(arr.to);
+  if(!p1||!p2)return null;
+  const key=[arr.from,arr.to].sort().join('|');
+  const pair=S.arrows.filter(a=>[a.from,a.to].sort().join('|')===key);
+  const idx=pair.indexOf(arr);
+  let curve=arr.curve||0;
+  if(curve===0){if(pair.length>1)curve=idx===0?1:-1;else curve=0.4;}
+  const e1=nodeEdge(arr.from,p2.x,p2.y)||p1;
+  const e2=nodeEdge(arr.to,p1.x,p1.y)||p2;
+  const{cpx,cpy}=getCP(e1.x,e1.y,e2.x,e2.y,curve);
+  return bezMid(e1.x,e1.y,cpx,cpy,e2.x,e2.y);
+}
+
+// ── ARROW LABELS ──
+function renderLabels(){
+  const ex=new Map();
+  elems.querySelectorAll('.alabel[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+
+  S.arrows.forEach(arr=>{
+    const mid=arrowMid(arr);
+    if(!mid)return;
+    let lbl=ex.get(arr.id);
+    const hasLabel=(arr.name||arr.icon);
+    if(hasLabel){
+      if(!lbl){
+        lbl=document.createElement('div');
+        lbl.className='alabel';lbl.dataset.id=arr.id;
+        lbl.addEventListener('click',e=>{e.stopPropagation();openArrowEditor(arr.id)});
+        lbl.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onArrowCtx(e,arr.id)});
+        elems.appendChild(lbl);
+      } else ex.delete(arr.id);
+      lbl.style.left=mid.x+'px';lbl.style.top=mid.y+'px';
+      lbl.textContent=(arr.name||'')+(arr.icon?' '+arr.icon:'');
+    } else {
+      if(lbl)lbl.remove();
+    }
+  });
+  ex.forEach(e=>e.remove());
+}
+
+// ── DESCRIPTIONS (draggable boxes + dotted leader lines) ──
+function descAnchor(owner,kind){
+  if(kind==='card')return{x:owner.x+cardEffW(owner)/2,y:owner.y+cardEffH(owner)/2};
+  if(kind==='branch')return{x:owner.x+20,y:owner.y+20};
+  if(kind==='arrow')return arrowMid(owner);
+  return null;
+}
+function defaultDescOff(owner,kind){
+  if(kind==='card')return{x:cardEffW(owner)/2+24,y:cardEffH(owner)/2+18};
+  if(kind==='branch')return{x:30,y:34};
+  return{x:18,y:30};
+}
+function ownerByDescId(id){return cardById(id)||branchById(id)||arrById(id);}
+function rectEdgePt(cx,cy,hw,hh,fromX,fromY){
+  const dx=fromX-cx,dy=fromY-cy;
+  if(!dx&&!dy)return{x:cx,y:cy};
+  const sx=Math.abs(dx)>0?hw/Math.abs(dx):1e9;
+  const sy=Math.abs(dy)>0?hh/Math.abs(dy):1e9;
+  const sc=Math.min(1,Math.min(sx,sy));
+  return{x:cx+dx*sc,y:cy+dy*sc};
+}
+function renderDescs(){
+  const want=[];
+  if(S.showDesc){
+    S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
+    S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
+    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
+  }
+  const ex=new Map();
+  elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
+  const lex=new Map();
+  descLinesG.querySelectorAll('[data-desc-id]').forEach(l=>lex.set(l.dataset.descId,l));
+
+  want.forEach(w=>{
+    const a=descAnchor(w.owner,w.kind);
+    if(!a)return;
+    if(!w.owner.descOff)w.owner.descOff=defaultDescOff(w.owner,w.kind);
+    const off=w.owner.descOff;
+    const bx=a.x+off.x, by=a.y+off.y;
+    // box
+    let box=ex.get(w.id);
+    if(!box){
+      box=document.createElement('div');box.className='desc-box';box.dataset.descId=w.id;
+      box.addEventListener('mousedown',e=>onDescMousedown(e,w.id,w.kind));
+      box.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onDescCtx(e,w.id,w.kind)});
+      elems.appendChild(box);
+    } else ex.delete(w.id);
+    box.textContent=w.owner.desc;
+    box.style.left=bx+'px';box.style.top=by+'px';
+    box.style.fontSize=(11*(w.owner.descScale||1))+'px';
+    // dotted leader line, clipped to the box edge
+    let line=lex.get(w.id);
+    if(!line){line=svgE('line',{'data-desc-id':w.id,stroke:'rgba(175,160,255,.6)','stroke-width':1.4,'stroke-dasharray':'5,4'});descLinesG.appendChild(line);}
+    else lex.delete(w.id);
+    const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
+    const bcx=bx+bw/2, bcy=by+bh/2;
+    const ep=rectEdgePt(bcx,bcy,bw/2+2,bh/2+2,a.x,a.y);
+    line.setAttribute('x1',a.x);line.setAttribute('y1',a.y);
+    line.setAttribute('x2',ep.x);line.setAttribute('y2',ep.y);
+  });
+  ex.forEach(e=>e.remove());
+  lex.forEach(l=>l.remove());
+}
+function onDescMousedown(e,id,kind){
+  if(e.button!==0)return;
+  e.stopPropagation();e.preventDefault();
+  const owner=ownerByDescId(id);if(!owner)return;
+  if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
+  const off0={x:owner.descOff.x,y:owner.descOff.y};
+  const start=s2c(e.clientX,e.clientY);
+  const box=elems.querySelector(`.desc-box[data-desc-id="${id}"]`);
+  if(box)box.classList.add('dragging');
+  const onMove=ev=>{
+    const cp=s2c(ev.clientX,ev.clientY);
+    owner.descOff={x:clampW(off0.x+(cp.x-start.x)),y:clampW(off0.y+(cp.y-start.y))};
+    renderDescs();
+  };
+  const onUp=()=>{
+    window.removeEventListener('mousemove',onMove);window.removeEventListener('mouseup',onUp);
+    if(box)box.classList.remove('dragging');
+    scheduleCommit(); // record desc move for undo
+  };
+  window.addEventListener('mousemove',onMove);window.addEventListener('mouseup',onUp);
+}
+function onDescCtx(e,id,kind){
+  const owner=ownerByDescId(id);if(!owner)return;
+  showCtx(e.clientX,e.clientY,[
+    {slider:true,label:'解説サイズ',min:.5,max:3,step:.05,value:owner.descScale||1,oninput:v=>{owner.descScale=v;renderDescs();}},
+    {icon:'↩',label:'位置をリセット',action:()=>{owner.descOff=defaultDescOff(owner,kind);renderDescs();}},
+    'sep',
+    {icon:'✏️',label:'解説を編集',action:()=>{
+      if(kind==='card')openCardEditor(id);else if(kind==='branch')openBranchEditor(id);else openArrowEditor(id);
+    }}
+  ]);
+}
+
+// ── SUBTITLES ──
+function renderSubtitles(){
+  const ex=new Map();
+  elems.querySelectorAll('.subtitle[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+  S.subtitles.forEach(st=>{
+    let el=ex.get(st.id);
+    if(!el){
+      el=document.createElement('div');el.className='subtitle';el.dataset.id=st.id;
+      el.addEventListener('mousedown',e=>onCardMousedown(e,st.id));
+      el.addEventListener('dblclick',e=>{e.stopPropagation();openSubtitleEditor(st.id)});
+      el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onSubtitleCtx(e,st.id)});
+      elems.appendChild(el);
+    } else ex.delete(st.id);
+    el.style.left=st.x+'px';el.style.top=st.y+'px';
+    el.textContent=st.text||'サブタイトル';
+    el.style.fontSize=(st.size||22)+'px';
+    el.style.color=st.color||'#ffffff';
+    el.style.borderColor=st.borderColor||'#c8a8ff';
+  });
+  ex.forEach(e=>e.remove());
+}
+
+// ── IMAGES ──
+function renderImages(){
+  const ex=new Map();
+  elems.querySelectorAll('.imgel[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+  S.images.forEach(im=>{
+    let el=ex.get(im.id);
+    if(!el){
+      el=document.createElement('div');el.className='imgel';el.dataset.id=im.id;
+      const img=document.createElement('img');el.appendChild(img);
+      el.addEventListener('mousedown',e=>onCardMousedown(e,im.id));
+      el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onImageCtx(e,im.id)});
+      elems.appendChild(el);
+    } else ex.delete(im.id);
+    el.style.left=im.x+'px';el.style.top=im.y+'px';
+    const img=el.querySelector('img');
+    img.src=im.src;img.style.width=im.w+'px';img.style.height=im.h+'px';
+  });
+  ex.forEach(e=>e.remove());
+}
+
+// ── TEMP ARROW ──
+function updateTempArrow(){
+  if(!S.connecting){tempArr.setAttribute('display','none');return;}
+  const p1=nodeCenter(S.connecting.fromId);if(!p1){tempArr.setAttribute('display','none');return;}
+  const e1=nodeEdge(S.connecting.fromId,S.mouse.x,S.mouse.y)||p1;
+  const d=`M${e1.x},${e1.y} L${S.mouse.x},${S.mouse.y}`;
+  tempArr.setAttribute('d',d);tempArr.setAttribute('display','');
+}
+
+// ═══════════════════════════════════════
+//  INTERACTIONS
+// ═══════════════════════════════════════
+// Drag from a card/branch + button to another node to create an arrow
+function beginConnectDrag(fromId,ev){
+  if(ev.button!==0)return;
+  ev.stopPropagation();ev.preventDefault();
+  S.connecting={fromId};
+  S.mouse=s2c(ev.clientX,ev.clientY);
+  S.mode='normal';
+  document.getElementById('btn-branch-mode').classList.remove('active');
+  render();
+  const onMove=e=>{S.mouse=s2c(e.clientX,e.clientY);updateTempArrow();};
+  const onUp=e=>{
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('mouseup',onUp);
+    const tgt=document.elementFromPoint(e.clientX,e.clientY);
+    const host=tgt&&tgt.closest&&tgt.closest('.card,.branch');
+    if(host&&host.dataset.id&&host.dataset.id!==fromId){
+      createArrow(fromId,host.dataset.id);
+    }
+    S.connecting=null;
+    render();
+  };
+  window.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+}
+function cancelConnect(){S.connecting=null;tempArr.setAttribute('display','none');render();}
+
+function onArrowHitClick(e,arrId){
+  if(S.connecting){e.stopPropagation();return;} // ignore if connecting
+  if(S.mode==='branch'){
+    e.stopPropagation();
+    const pt=s2c(e.clientX,e.clientY);
+    const br={id:uid(),x:pt.x-20,y:pt.y-20,name:'分岐',color:'#f0c040',icon:'⑂',desc:''};
+    const arr=arrById(arrId);
+    if(arr){
+      // Split arrow
+      const origTo=arr.to;
+      arr.to=br.id;
+      S.arrows.push({id:uid(),from:br.id,to:origTo,name:'',icon:'',color:arr.color||'#fff',width:arr.width||2,desc:'',curve:0});
+    }
+    S.branches.push(br);
+    render();
+  }
+}
+
+// ═══════════════════════════════════════
+//  MOUSEDOWN on draggable elements
+// ═══════════════════════════════════════
+function onCardMousedown(e,id){
+  if(e.button!==0)return;
+  e.stopPropagation();
+
+  // If connecting, try to connect
+  if(S.connecting){
+    if(S.connecting.fromId!==id){
+      createArrow(S.connecting.fromId,id);
+      S.connecting=null;
+      render();
+    }
+    return;
+  }
+
+  const pt=s2c(e.clientX,e.clientY);
+  const node=getById(id)||S.subtitles.find(s=>s.id===id)||S.images.find(i=>i.id===id);
+  if(!node)return;
+  S.dragging={id,sx:pt.x,sy:pt.y,ox:node.x,oy:node.y,moved:false};
+
+  const onMove=ev=>{
+    const cp=s2c(ev.clientX,ev.clientY);
+    const dx=cp.x-S.dragging.sx,dy=cp.y-S.dragging.sy;
+    if(Math.abs(dx)>3||Math.abs(dy)>3)S.dragging.moved=true;
+    node.x=clampW(S.dragging.ox+dx);node.y=clampW(S.dragging.oy+dy);
+    // fast update
+    const el=elems.querySelector(`[data-id="${id}"]`);
+    if(el){el.style.left=node.x+'px';el.style.top=node.y+'px';}
+    renderArrows();renderLabels();renderZones();renderDescs();
+  };
+  const onUp=ev=>{
+    window.removeEventListener('mousemove',onMove);
+    window.removeEventListener('mouseup',onUp);
+    if(!S.dragging.moved){
+      // click → open editor
+      const card=cardById(id);
+      const br=branchById(id);
+      const st=S.subtitles.find(s=>s.id===id);
+      const im=S.images.find(i=>i.id===id);
+      if(card)openCardEditor(id);
+      else if(br)openBranchEditor(id);
+      // subtitle dblclick handles itself; image contextmenu
+    } else {
+      scheduleCommit(); // record the move for undo
+    }
+    S.dragging=null;
+  };
+  window.addEventListener('mousemove',onMove);
+  window.addEventListener('mouseup',onUp);
+}
+
+// ═══════════════════════════════════════
+//  CREATE ELEMENTS
+// ═══════════════════════════════════════
+function createArrow(from,to){
+  // Avoid duplicate arrows in same direction
+  if(S.arrows.find(a=>a.from===from&&a.to===to))return;
+  S.arrows.push({id:uid(),from,to,name:'',icon:'',color:'#ffffff',width:2,desc:'',curve:0,dashed:false});
+}
+
+function addCard(){
+  const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
+  S.cards.push({id:uid(),x:c.x-75,y:c.y-45,w:150,h:90,name:'新しいカード',sub:'',
+    color:'#9b59b6',image:null,icon:'✦',shape:'rect',desc:'',textScale:1,zoneIds:[]});
+  render();
+}
+
+function addBranch(x,y){
+  S.branches.push({id:uid(),x:x-20,y:y-20,name:'分岐',color:'#f0c040',icon:'⑂',desc:''});
+  render();
+}
+
+function addSubtitle(){
+  const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
+  S.subtitles.push({id:uid(),x:c.x-80,y:c.y-20,text:'サブタイトル',size:22,color:'#ffffff',borderColor:'#c8a8ff'});
+  render();
+}
+
+// ═══════════════════════════════════════
+//  DELETE HELPERS
+// ═══════════════════════════════════════
+function deleteCard(id){
+  S.cards=S.cards.filter(c=>c.id!==id);
+  S.arrows=S.arrows.filter(a=>a.from!==id&&a.to!==id);
+  S.zones.forEach(z=>z.cardIds=z.cardIds.filter(cid=>cid!==id));
+  render();
+}
+function deleteBranch(id){
+  S.branches=S.branches.filter(b=>b.id!==id);
+  S.arrows=S.arrows.filter(a=>a.from!==id&&a.to!==id);
+  render();
+}
+function deleteArrow(id){
+  S.arrows=S.arrows.filter(a=>a.id!==id);render();
+}
+function deleteSubtitle(id){S.subtitles=S.subtitles.filter(s=>s.id!==id);render();}
+function deleteImage(id){S.images=S.images.filter(i=>i.id!==id);render();}
+
+function duplicateCard(id){
+  const c=cardById(id);if(!c)return;
+  const nc={...c,id:uid(),x:c.x+30,y:c.y+30,zoneIds:[]};
+  S.cards.push(nc);render();
+}
+
+// ═══════════════════════════════════════
+//  MODAL SYSTEM
+// ═══════════════════════════════════════
+function showModal(html,onShown){
+  modBox.innerHTML=html;
+  modOv.classList.add('show');
+  if(onShown)onShown();
+}
+function hideModal(){modOv.classList.remove('show');}
+modOv.addEventListener('mousedown',e=>{if(e.target===modOv)hideModal();});
+
+// ── CARD EDITOR ──
+function openCardEditor(id){
+  const card=cardById(id);if(!card)return;
+  showModal(`
+    <h2>カードの編集</h2>
+    <div class="fg"><label>カード名</label><input type="text" id="ed-name" value="${esc(card.name)}"></div>
+    <div class="fg"><label>サブ情報</label><input type="text" id="ed-sub" value="${esc(card.sub)}"></div>
+    <div class="fg"><label>カードの色</label>
+      <div class="color-row">
+        <input type="color" id="ed-color" value="${card.color||'#9b59b6'}">
+        ${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}" title="${p}"></div>`).join('')}
+      </div>
+    </div>
+    <div class="fg"><label>枠の形</label>
+      <select id="ed-shape">
+        <option value="rect" ${card.shape==='rect'?'selected':''}>□ 四角</option>
+        <option value="circle" ${card.shape==='circle'?'selected':''}>○ 円形</option>
+        <option value="bubble" ${card.shape==='bubble'?'selected':''}>💬 吹き出し</option>
+      </select>
+    </div>
+    <div class="fg"><label>アイコン（画像なし時表示）</label>
+      <div class="icon-grid" id="ed-icon-grid"></div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;color:#888">カスタム絵文字</label>
+        <input type="text" id="ed-cicon" value="${esc(card.icon)}" style="width:60px;text-align:center;font-size:18px">
+      </div>
+    </div>
+    <div class="fg"><label>カード画像</label>
+      <div style="display:flex;gap:8px;align-items:center">
+        <button class="btn btn-s" id="ed-imgbtn">📁 画像を選択</button>
+        ${card.image?'<button class="btn btn-s" id="ed-clrimg">🗑 削除</button><img src="'+card.image+'" style="height:40px;border-radius:4px">':''}
+      </div>
+    </div>
+    <div class="fg"><label>幅 (px)</label><input type="number" id="ed-w" value="${card.w||150}" min="80" max="600" style="width:80px"></div>
+    <div class="fg"><label>解説</label><textarea id="ed-desc">${esc(card.desc)}</textarea></div>
+    <div class="mact">
+      <button class="btn btn-d" id="ed-del">🗑 削除</button>
+      <button class="btn btn-s" id="ed-dup">複製</button>
+      <button class="btn btn-s" id="ed-zones">ゾーン設定</button>
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="ed-save">保存</button>
+    </div>
+  `,()=>{
+    buildIconGrid('ed-icon-grid',card.icon,v=>document.getElementById('ed-cicon').value=v);
+    document.querySelectorAll('.color-preset').forEach(p=>{
+      p.addEventListener('click',()=>{
+        document.getElementById('ed-color').value=p.dataset.col;
+        document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
+        p.classList.add('sel');
+      });
+    });
+    // image upload
+    const imgInp=document.createElement('input');imgInp.type='file';imgInp.accept='image/*';
+    imgInp.onchange=e=>{
+      const f=e.target.files[0];if(!f)return;
+      const r=new FileReader();r.onload=ev=>{
+        card.image=ev.target.result;
+        // give image cards a roomier default so the picture shows large
+        if(!card.w||card.w<=150)card.w=220;
+        openCardEditor(id);
+      };r.readAsDataURL(f);
+    };
+    document.getElementById('ed-imgbtn').onclick=()=>imgInp.click();
+    const clrBtn=document.getElementById('ed-clrimg');
+    if(clrBtn)clrBtn.onclick=()=>{card.image=null;openCardEditor(id);};
+    document.getElementById('ed-save').onclick=()=>{
+      card.name=document.getElementById('ed-name').value;
+      card.sub=document.getElementById('ed-sub').value;
+      card.color=document.getElementById('ed-color').value;
+      card.shape=document.getElementById('ed-shape').value;
+      card.icon=document.getElementById('ed-cicon').value||'✦';
+      card.w=parseInt(document.getElementById('ed-w').value)||150;
+      card.desc=document.getElementById('ed-desc').value;
+      hideModal();render();
+    };
+    document.getElementById('ed-del').onclick=()=>{if(confirm('このカードを削除しますか?')){deleteCard(id);hideModal();}};
+    document.getElementById('ed-dup').onclick=()=>{duplicateCard(id);hideModal();};
+    document.getElementById('ed-zones').onclick=()=>openZoneEditor(id);
+  });
+}
+
+function buildIconGrid(containerId,selected,onSelect){
+  const g=document.getElementById(containerId);if(!g)return;
+  g.innerHTML='';
+  ICONS.forEach(ic=>{
+    const d=document.createElement('div');d.className='icon-opt'+(ic===selected?' sel':'');
+    d.textContent=ic;
+    d.onclick=()=>{
+      g.querySelectorAll('.icon-opt').forEach(x=>x.classList.remove('sel'));
+      d.classList.add('sel');onSelect(ic);
+    };
+    g.appendChild(d);
+  });
+}
+
+// ── ARROW EDITOR ──
+function openArrowEditor(id){
+  const arr=arrById(id);if(!arr)return;
+  showModal(`
+    <h2>矢印の編集</h2>
+    <div class="fg"><label>関係の名称</label><input type="text" id="ae-name" value="${esc(arr.name)}"></div>
+    <div class="fg"><label>アイコン（絵文字）</label><input type="text" id="ae-icon" value="${esc(arr.icon)}" style="width:60px;text-align:center;font-size:18px"></div>
+    <div class="fg"><label>線の色</label>
+      <div class="color-row">
+        <input type="color" id="ae-color" value="${arr.color||'#ffffff'}">
+        ${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}"></div>`).join('')}
+      </div>
+    </div>
+    <div class="fg"><label>線の太さ</label>
+      <div class="thick-btns">
+        ${[1,2,3,5,8].map(w=>`<button class="thick-btn${(arr.width||2)===w?' sel':''}" data-w="${w}">${w}px</button>`).join('')}
+      </div>
+    </div>
+    <div class="fg"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ae-dashed" ${arr.dashed?'checked':''}> 点線</label></div>
+    <div class="fg"><label>解説</label><textarea id="ae-desc">${esc(arr.desc)}</textarea></div>
+    <div class="mact">
+      <button class="btn btn-d" id="ae-del">🗑 削除</button>
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="ae-save">保存</button>
+    </div>
+  `,()=>{
+    let selW=arr.width||2;
+    document.querySelectorAll('.thick-btn').forEach(b=>{
+      b.addEventListener('click',()=>{
+        selW=parseInt(b.dataset.w);
+        document.querySelectorAll('.thick-btn').forEach(x=>x.classList.remove('sel'));
+        b.classList.add('sel');
+      });
+    });
+    document.querySelectorAll('.color-preset').forEach(p=>{
+      p.addEventListener('click',()=>{
+        document.getElementById('ae-color').value=p.dataset.col;
+        document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
+        p.classList.add('sel');
+      });
+    });
+    document.getElementById('ae-save').onclick=()=>{
+      arr.name=document.getElementById('ae-name').value;
+      arr.icon=document.getElementById('ae-icon').value;
+      arr.color=document.getElementById('ae-color').value;
+      arr.width=selW;
+      arr.dashed=document.getElementById('ae-dashed').checked;
+      arr.desc=document.getElementById('ae-desc').value;
+      hideModal();render();
+    };
+    document.getElementById('ae-del').onclick=()=>{deleteArrow(id);hideModal();};
+  });
+}
+
+// ── BRANCH EDITOR ──
+function openBranchEditor(id){
+  const br=branchById(id);if(!br)return;
+  showModal(`
+    <h2>分岐ノードの編集</h2>
+    <div class="fg"><label>ラベル</label><input type="text" id="be-name" value="${esc(br.name)}"></div>
+    <div class="fg"><label>アイコン</label>
+      <div class="icon-grid" id="be-icon-grid"></div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
+        <label style="font-size:11px;color:#888">カスタム絵文字</label>
+        <input type="text" id="be-cicon" value="${esc(br.icon)}" style="width:60px;text-align:center;font-size:18px">
+      </div>
+    </div>
+    <div class="fg"><label>カラー</label>
+      <div class="color-row">
+        <input type="color" id="be-color" value="${br.color||'#f0c040'}">
+        ${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}"></div>`).join('')}
+      </div>
+    </div>
+    <div class="fg"><label>解説</label><textarea id="be-desc">${esc(br.desc)}</textarea></div>
+    <div class="mact">
+      <button class="btn btn-d" id="be-del">🗑 削除</button>
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="be-save">保存</button>
+    </div>
+  `,()=>{
+    buildIconGrid('be-icon-grid',br.icon,v=>document.getElementById('be-cicon').value=v);
+    document.querySelectorAll('.color-preset').forEach(p=>{
+      p.addEventListener('click',()=>{
+        document.getElementById('be-color').value=p.dataset.col;
+        document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
+        p.classList.add('sel');
+      });
+    });
+    document.getElementById('be-save').onclick=()=>{
+      br.name=document.getElementById('be-name').value;
+      br.icon=document.getElementById('be-cicon').value||'⑂';
+      br.color=document.getElementById('be-color').value;
+      br.desc=document.getElementById('be-desc').value;
+      hideModal();render();
+    };
+    document.getElementById('be-del').onclick=()=>{deleteBranch(id);hideModal();};
+  });
+}
+
+// ── ZONE EDITOR ──
+function openZoneEditor(cardId){
+  showModal(`
+    <h2>ゾーン設定</h2>
+    <div id="zone-list"></div>
+    <button class="btn btn-s" id="zone-add" style="margin-top:10px">＋ ゾーンを追加</button>
+    <div class="mact">
+      <button class="btn btn-s" onclick="openCardEditor('${cardId}')">← 戻る</button>
+      <button class="btn btn-p" onclick="hideModal();render()">完了</button>
+    </div>
+  `,()=>{renderZoneList(cardId);
+    document.getElementById('zone-add').onclick=()=>{
+      S.zones.push({id:uid(),name:'新しいゾーン',color:'#4a9eff',cardIds:[]});
+      renderZoneList(cardId);
+    };
+  });
+}
+function renderZoneList(cardId){
+  const list=document.getElementById('zone-list');if(!list)return;
+  list.innerHTML='';
+  S.zones.forEach(z=>{
+    const checked=z.cardIds.includes(cardId);
+    const row=document.createElement('div');row.className='zone-item';
+    row.innerHTML=`
+      <input type="checkbox" class="zcheck" ${checked?'checked':''}>
+      <input type="color" value="${z.color||'#4a9eff'}">
+      <input type="text" value="${esc(z.name)}" placeholder="ゾーン名">
+      <button class="zone-del" title="削除">×</button>
+    `;
+    const chk=row.querySelector('.zcheck');
+    const colI=row.querySelector('input[type=color]');
+    const txtI=row.querySelector('input[type=text]');
+    const delB=row.querySelector('.zone-del');
+    chk.onchange=()=>{
+      if(chk.checked){if(!z.cardIds.includes(cardId))z.cardIds.push(cardId);}
+      else z.cardIds=z.cardIds.filter(i=>i!==cardId);
+    };
+    colI.oninput=()=>z.color=colI.value;
+    txtI.oninput=()=>z.name=txtI.value;
+    delB.onclick=()=>{S.zones=S.zones.filter(x=>x.id!==z.id);renderZoneList(cardId);};
+    list.appendChild(row);
+  });
+}
+
+// ── SUBTITLE EDITOR ──
+function openSubtitleEditor(id){
+  const st=S.subtitles.find(s=>s.id===id);if(!st)return;
+  showModal(`
+    <h2>サブタイトルの編集</h2>
+    <div class="fg"><label>テキスト</label><input type="text" id="ste-txt" value="${esc(st.text)}"></div>
+    <div class="fg"><label>文字サイズ (px)</label><input type="number" id="ste-size" value="${st.size||22}" min="12" max="72" style="width:80px"></div>
+    <div class="fg"><label>文字色</label><input type="color" id="ste-col" value="${st.color||'#ffffff'}"></div>
+    <div class="fg"><label>枠の色</label><input type="color" id="ste-bcol" value="${st.borderColor||'#c8a8ff'}"></div>
+    <div class="mact">
+      <button class="btn btn-d" id="ste-del">🗑 削除</button>
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="ste-save">保存</button>
+    </div>
+  `,()=>{
+    document.getElementById('ste-save').onclick=()=>{
+      st.text=document.getElementById('ste-txt').value;
+      st.size=parseInt(document.getElementById('ste-size').value)||22;
+      st.color=document.getElementById('ste-col').value;
+      st.borderColor=document.getElementById('ste-bcol').value;
+      hideModal();render();
+    };
+    document.getElementById('ste-del').onclick=()=>{deleteSubtitle(id);hideModal();};
+  });
+}
+
+// ═══════════════════════════════════════
+//  CONTEXT MENUS
+// ═══════════════════════════════════════
+function showCtx(x,y,items){
+  ctxMenu.innerHTML='';
+  items.forEach(it=>{
+    if(it==='sep'){const d=document.createElement('div');d.className='ctx-sep';ctxMenu.appendChild(d);}
+    else if(it.slider){
+      const fmt=it.fmt||(v=>Math.round(v*100)+'%');
+      const d=document.createElement('div');d.className='ctx-slider';
+      const lab=document.createElement('div');lab.className='ctx-slabel';
+      const t=document.createElement('span');t.textContent=it.label;
+      const val=document.createElement('span');val.className='ctx-sval';val.textContent=fmt(+it.value);
+      lab.appendChild(t);lab.appendChild(val);
+      const rng=document.createElement('input');
+      rng.type='range';rng.min=it.min;rng.max=it.max;rng.step=it.step;rng.value=it.value;
+      rng.oninput=()=>{val.textContent=fmt(+rng.value);it.oninput(+rng.value);};
+      // keep the menu open while dragging the bar
+      d.addEventListener('mousedown',ev=>ev.stopPropagation());
+      d.appendChild(lab);d.appendChild(rng);
+      ctxMenu.appendChild(d);
+    }
+    else{
+      const d=document.createElement('div');d.className='ctx-item'+(it.danger?' danger':'');
+      d.innerHTML=(it.icon?it.icon+' ':'')+'<span>'+esc(it.label)+'</span>';
+      d.onclick=()=>{hideCtx();it.action();};
+      ctxMenu.appendChild(d);
+    }
+  });
+  ctxMenu.style.left=x+'px';ctxMenu.style.top=y+'px';ctxMenu.style.display='block';
+  // Adjust if overflow
+  requestAnimationFrame(()=>{
+    const r=ctxMenu.getBoundingClientRect();
+    if(r.right>window.innerWidth)ctxMenu.style.left=(x-r.width)+'px';
+    if(r.bottom>window.innerHeight)ctxMenu.style.top=(y-r.height)+'px';
+  });
+}
+function hideCtx(){ctxMenu.style.display='none';}
+
+function onCardCtx(e,id){
+  const card=cardById(id);if(!card)return;
+  showCtx(e.clientX,e.clientY,[
+    {icon:'✏️',label:'編集',action:()=>openCardEditor(id)},
+    {icon:'📋',label:'複製',action:()=>duplicateCard(id)},
+    'sep',
+    {slider:true,label:'カード全体サイズ',min:.3,max:4,step:.05,value:card.scale||1,oninput:v=>{card.scale=v;render();}},
+    {slider:true,label:'文字サイズ',min:.5,max:3,step:.05,value:card.textScale||1,oninput:v=>{card.textScale=v;render();}},
+    {icon:'↩',label:'サイズをリセット',action:()=>{card.scale=1;card.textScale=1;render();}},
+    'sep',
+    {icon:'🗑',label:'削除',danger:true,action:()=>deleteCard(id)}
+  ]);
+}
+function onBranchCtx(e,id){
+  const br=branchById(id);if(!br)return;
+  showCtx(e.clientX,e.clientY,[
+    {icon:'✏️',label:'編集',action:()=>openBranchEditor(id)},
+    'sep',
+    {slider:true,label:'サイズ',min:.4,max:5,step:.05,value:br.scale||1,oninput:v=>{br.scale=v;render();}},
+    {icon:'↩',label:'サイズをリセット',action:()=>{br.scale=1;render();}},
+    'sep',
+    {icon:'🗑',label:'削除',danger:true,action:()=>deleteBranch(id)}
+  ]);
+}
+function onArrowCtx(e,id){
+  showCtx(e.clientX,e.clientY,[
+    {icon:'✏️',label:'矢印を編集',action:()=>openArrowEditor(id)},
+    'sep',
+    {icon:'🗑',label:'削除',danger:true,action:()=>deleteArrow(id)}
+  ]);
+}
+function onSubtitleCtx(e,id){
+  const st=S.subtitles.find(s=>s.id===id);if(!st)return;
+  showCtx(e.clientX,e.clientY,[
+    {icon:'✏️',label:'編集',action:()=>openSubtitleEditor(id)},
+    {slider:true,label:'文字サイズ',min:10,max:120,step:1,value:st.size||22,fmt:v=>Math.round(v)+'px',oninput:v=>{st.size=v;render();}},
+    'sep',
+    {icon:'🗑',label:'削除',danger:true,action:()=>deleteSubtitle(id)}
+  ]);
+}
+function onImageCtx(e,id){
+  const im=S.images.find(i=>i.id===id);if(!im)return;
+  const ar=im.h/im.w; // keep aspect ratio while sliding
+  showCtx(e.clientX,e.clientY,[
+    {slider:true,label:'画像サイズ',min:40,max:1400,step:5,value:Math.round(im.w),fmt:v=>Math.round(v)+'px',oninput:v=>{im.w=v;im.h=v*ar;render();}},
+    'sep',
+    {icon:'🗑',label:'削除',danger:true,action:()=>deleteImage(id)}
+  ]);
+}
+function onCanvasCtx(e){
+  const pt=s2c(e.clientX,e.clientY);
+  showCtx(e.clientX,e.clientY,[
+    {icon:'➕',label:'カードを追加',action:()=>{
+      S.cards.push({id:uid(),x:pt.x-75,y:pt.y-45,w:150,h:90,name:'新しいカード',sub:'',
+        color:'#9b59b6',image:null,icon:'✦',shape:'rect',desc:'',textScale:1,zoneIds:[]});
+      render();
+    }},
+    {icon:'T',label:'サブタイトルを追加',action:()=>{
+      S.subtitles.push({id:uid(),x:pt.x-80,y:pt.y-15,text:'サブタイトル',size:22,color:'#ffffff',borderColor:'#c8a8ff'});
+      render();
+    }},
+    'sep',
+    {icon:'🔍',label:'ズームイン',action:()=>zoomAt(e.clientX,e.clientY,1.25)},
+    {icon:'🔎',label:'ズームアウト',action:()=>zoomAt(e.clientX,e.clientY,.8)},
+    {icon:'🏠',label:'ビューをリセット',action:()=>{S.zoom=1;S.panX=60;S.panY=60;applyTf();}}
+  ]);
+}
+
+function zoomAt(sx,sy,factor){
+  const r=wrap.getBoundingClientRect();
+  const mx=sx-r.left,my=sy-r.top;
+  const newZoom=Math.max(.1,Math.min(5,S.zoom*factor));
+  S.panX=mx-(mx-S.panX)/S.zoom*newZoom;
+  S.panY=my-(my-S.panY)/S.zoom*newZoom;
+  S.zoom=newZoom;applyTf();
+}
+
+// ═══════════════════════════════════════
+//  GLOBAL EVENTS
+// ═══════════════════════════════════════
+// Wheel zoom
+// Wheel always zooms the whole canvas. Resizing individual elements is right-click only.
+wrap.addEventListener('wheel',e=>{
+  e.preventDefault();
+  zoomAt(e.clientX,e.clientY,e.deltaY<0?1.1:.9);
+},{passive:false});
+
+// Pan on canvas mousedown (empty space)
+wrap.addEventListener('mousedown',e=>{
+  const onArrow=e.target.classList&&e.target.classList.contains('ahit');
+  const onElem=e.target.closest('.card,.branch,.alabel,.subtitle,.imgel');
+  // Empty space (or middle button) → pan. Arrows handle their own clicks.
+  if(e.button===1||(e.button===0&&!onElem&&!onArrow)){
+    if(S.connecting){cancelConnect();return;}
+    S.panning=true;
+    S.panSt={sx:e.clientX,sy:e.clientY,px:S.panX,py:S.panY};
+    wrap.style.cursor='grabbing';
+  }
+});
+window.addEventListener('mousemove',e=>{
+  const c=s2c(e.clientX,e.clientY);
+  S.mouse=c;
+  if(S.connecting)updateTempArrow();
+  if(S.panning&&S.panSt){
+    S.panX=S.panSt.px+(e.clientX-S.panSt.sx);
+    S.panY=S.panSt.py+(e.clientY-S.panSt.sy);
+    applyTf();
+  }
+});
+window.addEventListener('mouseup',e=>{
+  if(S.panning){S.panning=false;S.panSt=null;wrap.style.cursor='default';}
+});
+
+// Right-click on canvas
+wrap.addEventListener('contextmenu',e=>{
+  if(e.target===wrap||e.target===inner||e.target===svgL||e.target===elems){
+    e.preventDefault();onCanvasCtx(e);
+  }
+});
+
+// Hide context menu on click elsewhere
+document.addEventListener('mousedown',e=>{
+  if(!ctxMenu.contains(e.target))hideCtx();
+});
+
+// Keyboard
+document.addEventListener('keydown',e=>{
+  if(e.key==='Escape'){
+    cancelConnect();
+    if(S.mode==='branch'){S.mode='normal';document.getElementById('btn-branch-mode').classList.remove('active');render();}
+    return;
+  }
+  // ignore shortcuts while typing in a field / modal input
+  const t=e.target, tag=(t&&t.tagName)||'';
+  if(/^(INPUT|TEXTAREA|SELECT)$/.test(tag)||(t&&t.isContentEditable))return;
+  if(!(e.ctrlKey||e.metaKey))return;
+  const k=e.key.toLowerCase();
+  if(k==='z'&&!e.shiftKey){e.preventDefault();undo();}
+  else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();redo();} // Ctrl+Y or Ctrl+Shift+Z
+  else if(k==='b'){e.preventDefault();addCard();}                      // new card
+  else if(k==='s'){e.preventDefault();saveFile();}                     // save
+});
+
+// Paste image
+document.addEventListener('paste',e=>{
+  const items=Array.from(e.clipboardData?.items||[]);
+  const imgItem=items.find(i=>i.type.startsWith('image/'));
+  if(imgItem){
+    const blob=imgItem.getAsFile();
+    const reader=new FileReader();
+    reader.onload=ev=>{
+      const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
+      S.images.push({id:uid(),x:c.x-100,y:c.y-75,w:200,h:150,src:ev.target.result});
+      render();
+    };
+    reader.readAsDataURL(blob);
+  }
+});
+
+// ═══════════════════════════════════════
+//  MENU BUTTONS
+// ═══════════════════════════════════════
+document.getElementById('btn-add-card').onclick=addCard;
+document.getElementById('btn-undo').onclick=undo;
+document.getElementById('btn-redo').onclick=redo;
+
+document.getElementById('btn-branch-mode').onclick=function(){
+  S.mode=S.mode==='branch'?'normal':'branch';
+  this.classList.toggle('active',S.mode==='branch');
+  if(S.mode==='branch')cancelConnect();
+  render();
+};
+
+document.getElementById('btn-add-subtitle').onclick=addSubtitle;
+
+document.getElementById('btn-toggle-desc').onclick=function(){
+  S.showDesc=!S.showDesc;
+  this.classList.toggle('active',S.showDesc);
+  render();
+};
+// reflect the default (ON) on the button at startup
+document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
+
+document.getElementById('bg-sel').onchange=function(){
+  S.bg=this.value;render();
+};
+
+document.getElementById('btn-del-all').onclick=()=>{
+  if(confirm('すべての要素を削除しますか？この操作は元に戻せません。')){
+    S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];render();
+  }
+};
+
+// ── SAVE ──
+function saveFile(){
+  const data={
+    title:'相互関係ジェネレーター',
+    bg:S.bg,showDesc:S.showDesc,
+    cards:S.cards,arrows:S.arrows,branches:S.branches,
+    zones:S.zones,subtitles:S.subtitles,images:S.images
+  };
+  const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
+  const a=document.createElement('a');
+  a.href=URL.createObjectURL(blob);
+  a.download='relationship_'+(new Date().toISOString().slice(0,10))+'.json';
+  a.click();URL.revokeObjectURL(a.href);
+}
+document.getElementById('btn-save').onclick=saveFile;
+
+// ── LOAD ──
+document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
+document.getElementById('file-input').onchange=e=>{
+  const f=e.target.files[0];if(!f)return;
+  const r=new FileReader();
+  r.onload=ev=>{
+    try{
+      const d=JSON.parse(ev.target.result);
+      S.bg=d.bg||'grid';
+      S.showDesc=d.showDesc!==false; // default ON unless the file explicitly turned it off
+      S.cards=d.cards||[];
+      S.arrows=d.arrows||[];
+      S.branches=d.branches||[];
+      S.zones=d.zones||[];
+      S.subtitles=d.subtitles||[];
+      S.images=d.images||[];
+      document.getElementById('bg-sel').value=S.bg;
+      document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
+      render();
+      resetHistory(); // loaded file becomes the new undo baseline
+    }catch(err){alert('読み込みエラー: '+err.message);}
+  };
+  r.readAsText(f);
+  e.target.value='';
+};
+
+// ═══════════════════════════════════════
+//  INIT
+// ═══════════════════════════════════════
+applyTf();
+render();
+
+// Demo data
+(function demo(){
+  const id1=uid(),id2=uid(),id3=uid();
+  S.cards.push(
+    {id:id1,x:200,y:200,w:150,name:'主人公',sub:'勇者',color:'#3498db',image:null,icon:'★',shape:'rect',desc:'物語の主人公。正義感が強い。',textScale:1,zoneIds:[]},
+    {id:id2,x:500,y:150,w:150,name:'ライバル',sub:'騎士団',color:'#e74c8b',image:null,icon:'⚔',shape:'rect',desc:'主人公のライバル。',textScale:1,zoneIds:[]},
+    {id:id3,x:500,y:350,w:150,name:'師匠',sub:'魔法使い',color:'#9b59b6',image:null,icon:'✦',shape:'circle',desc:'主人公を導く師匠。',textScale:1,zoneIds:[]}
+  );
+  S.arrows.push(
+    {id:uid(),from:id1,to:id2,name:'ライバル関係',icon:'⚡',color:'#ff6060',width:2,desc:'互いに高め合う関係',curve:0,dashed:false},
+    {id:uid(),from:id3,to:id1,name:'師弟',icon:'',color:'#c8a8ff',width:2,desc:'',curve:0,dashed:false}
+  );
+  S.zones.push({id:uid(),name:'勇者パーティ',color:'#3498db',cardIds:[id1,id3]});
+  S.subtitles.push({id:uid(),x:250,y:70,text:'キャラクター相関図',size:28,color:'#ffffff',borderColor:'#c8a8ff'});
+  render();
+})();
+resetHistory(); // establish the initial undo baseline immediately
+
+// ═══════════════════════════════════════
+//  BOOT SCREEN (GameCube-style intro)
+// ═══════════════════════════════════════
+(function boot(){
+  const screen=document.getElementById('boot-screen');
+  if(!screen)return;
+  let gone=false,actx=null,played=false;
+  function remove(skip){
+    if(gone)return;gone=true;
+    if(skip)screen.classList.add('skip');
+    setTimeout(()=>screen.remove(),skip?380:60);
+  }
+  // GameCube-ish chime: low thud + shimmering rising arpeggio. Fires once, as soon as audio is allowed.
+  function chime(){
+    if(played)return;
+    try{
+      const AC=window.AudioContext||window.webkitAudioContext;if(!AC)return;
+      if(!actx)actx=new AC();
+      if(actx.state==='suspended')actx.resume();
+      if(actx.state!=='running')return; // autoplay blocked — retry on next user gesture
+      played=true;
+      const ctx=actx,t0=ctx.currentTime+0.03;
+      const master=ctx.createGain();master.connect(ctx.destination);
+      master.gain.setValueAtTime(0.0001,t0);
+      master.gain.exponentialRampToValueAtTime(0.5,t0+0.05);
+      master.gain.exponentialRampToValueAtTime(0.18,t0+1.6);
+      master.gain.exponentialRampToValueAtTime(0.0001,t0+2.7);
+      const lo=ctx.createOscillator(),lg=ctx.createGain();
+      lo.type='sine';lo.frequency.setValueAtTime(120,t0);lo.frequency.exponentialRampToValueAtTime(48,t0+0.5);
+      lg.gain.setValueAtTime(0.6,t0);lg.gain.exponentialRampToValueAtTime(0.001,t0+0.6);
+      lo.connect(lg);lg.connect(master);lo.start(t0);lo.stop(t0+0.7);
+      const notes=[392,523.25,587.33,783.99,880,1046.5];
+      notes.forEach((f,i)=>{
+        const st=t0+0.18+i*0.12;
+        ['triangle','sine'].forEach((tp,k)=>{
+          const o=ctx.createOscillator(),g=ctx.createGain();
+          o.type=tp;o.frequency.value=f*(k?2:1);
+          g.gain.setValueAtTime(0.0001,st);
+          g.gain.exponentialRampToValueAtTime(k?0.06:0.16,st+0.04);
+          g.gain.exponentialRampToValueAtTime(0.0001,st+1.1);
+          o.connect(g);g.connect(master);o.start(st);o.stop(st+1.2);
+        });
+      });
+    }catch(e){}
+  }
+  // Audio needs a user gesture (browser autoplay policy) — create the context only then.
+  const kick=()=>{chime();if(played){window.removeEventListener('pointerdown',kick);window.removeEventListener('keydown',kick);}};
+  window.addEventListener('pointerdown',kick);
+  window.addEventListener('keydown',kick);
+  // dismiss: click to skip, or auto after the animation
+  screen.addEventListener('click',()=>{chime();remove(true);});
+  setTimeout(()=>remove(false),4700);
+})();
+</script>
+</body>
+</html>
