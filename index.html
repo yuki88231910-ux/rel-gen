@@ -56,7 +56,9 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
 .card-add-btn:hover{background:#2277cc}
 /* "key" marker badge shown on flagged objects */
-.key-badge{position:absolute;top:-11px;left:-11px;width:23px;height:23px;display:flex;align-items:center;justify-content:center;font-size:12px;background:#16162e;border:2px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 5px rgba(0,0,0,.6),0 0 9px rgba(245,197,24,.45);line-height:1}
+.key-badge{position:absolute;top:-18px;left:-18px;width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#16162e;border:2.5px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 11px rgba(245,197,24,.45);line-height:1}
+/* arrow key badge: positioned at the arrow midpoint (just above the label), same badge style */
+.akey-badge{transform:translate(-50%,calc(-100% - 14px))}
 .card.shape-circle{border-radius:50%;width:110px;height:110px;padding:8px}
 .card.shape-bubble{border-radius:12px}
 .card.shape-bubble::after{content:'';position:absolute;bottom:-14px;left:50%;transform:translateX(-50%);border:7px solid transparent;filter:drop-shadow(0 2px 2px rgba(0,0,0,.3))}
@@ -862,12 +864,15 @@ function arrowMid(arr){
 function renderLabels(){
   const ex=new Map();
   elems.querySelectorAll('.alabel[data-id]').forEach(e=>ex.set(e.dataset.id,e));
+  const kex=new Map();
+  elems.querySelectorAll('.akey-badge[data-keyarr]').forEach(e=>kex.set(e.dataset.keyarr,e));
 
   S.arrows.forEach(arr=>{
     const mid=arrowMid(arr);
     if(!mid)return;
+    // label (text only)
     let lbl=ex.get(arr.id);
-    const hasLabel=(arr.name||arr.icon||arr.key);
+    const hasLabel=(arr.name||arr.icon);
     if(hasLabel){
       if(!lbl){
         lbl=document.createElement('div');
@@ -877,12 +882,20 @@ function renderLabels(){
         elems.appendChild(lbl);
       } else ex.delete(arr.id);
       lbl.style.left=mid.x+'px';lbl.style.top=mid.y+'px';
-      lbl.textContent=((arr.key?'🔑 ':'')+(arr.name||'')+(arr.icon?' '+arr.icon:'')).trim();
+      lbl.textContent=((arr.name||'')+(arr.icon?' '+arr.icon:'')).trim();
     } else {
       if(lbl)lbl.remove();
     }
+    // key badge (same badge format as other objects), at the arrow midpoint
+    let kb=kex.get(arr.id);
+    if(arr.key){
+      if(!kb){kb=document.createElement('div');kb.className='key-badge akey-badge';kb.dataset.keyarr=arr.id;kb.textContent='🔑';elems.appendChild(kb);}
+      else kex.delete(arr.id);
+      kb.style.left=mid.x+'px';kb.style.top=mid.y+'px';
+    } else if(kb)kb.remove();
   });
   ex.forEach(e=>e.remove());
+  kex.forEach(e=>e.remove());
 }
 
 // ── DESCRIPTIONS (draggable boxes + dotted leader lines) ──
@@ -983,7 +996,6 @@ function onDescCtx(e,id,kind){
   const owner=ownerByDescId(id);if(!owner)return;
   showCtx(e.clientX,e.clientY,[
     {slider:true,label:'解説サイズ',min:.5,max:3,step:.05,value:owner.descScale||1,oninput:v=>{owner.descScale=v;renderDescs();}},
-    {icon:'↩',label:'位置をリセット',action:()=>{owner.descOff=defaultDescOff(owner,kind);renderDescs();}},
     'sep',
     {icon:'✏️',label:'解説を編集',action:()=>{
       if(kind==='card')openCardEditor(id);else if(kind==='branch')openBranchEditor(id);
