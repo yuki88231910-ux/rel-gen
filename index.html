@@ -26,7 +26,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 
 /* ── CONTENT / SIDEBAR / CANVAS ── */
 #content{flex:1;display:flex;min-height:0;position:relative}
-#canvas-wrap{flex:1;min-width:0;overflow:hidden;position:relative;cursor:default}
+#canvas-wrap{flex:1;min-width:0;overflow:hidden;position:relative;cursor:default;touch-action:none}
+.card,.branch,.subtitle,.imgel,.desc-box,.card-add-btn,.q-item{touch-action:none}
 #canvas-inner{position:absolute;top:0;left:0;transform-origin:0 0}
 /* sidebar = floating HUD over the canvas; only the cards capture clicks, the empty area is click-through */
 #sidebar{position:absolute;left:0;top:0;bottom:0;width:236px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
@@ -176,6 +177,27 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 ::-webkit-scrollbar-track{background:#0d0d24}
 ::-webkit-scrollbar-thumb{background:#2a2a5a;border-radius:3px}
 
+/* floating button to show/hide the side panels on small screens */
+#mobile-sb-toggle{display:none;position:fixed;left:8px;bottom:10px;z-index:400;width:46px;height:46px;border-radius:50%;background:#2a1e55;border:1px solid #9a6aff;color:#fff;font-size:20px;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.5);cursor:pointer}
+body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
+
+/* ══ MOBILE / TOUCH OPTIMIZATION ══ */
+@media (max-width:760px),(pointer:coarse){
+  #menubar{flex-wrap:nowrap;overflow-x:auto;overflow-y:hidden;gap:6px;padding:6px 8px;-webkit-overflow-scrolling:touch}
+  #menubar::-webkit-scrollbar{height:0}
+  #app-title{font-size:13px}
+  .mbtn{padding:8px 12px;font-size:13px;min-height:40px}
+  #bg-sel{min-height:40px;font-size:13px}
+  #mobile-sb-toggle{display:flex}
+  #sidebar,#sidebar-right{width:170px}
+  .q-item{padding:11px 10px;font-size:14px}
+  .q-add-item{min-height:42px}
+  .q-section{font-size:12px;padding:10px 10px 4px}
+  .modal{width:94vw}
+  .card-add-btn{width:30px;height:30px;font-size:17px;top:-13px;right:-13px}
+  .q-del{opacity:.7}  /* always show delete on touch (no hover) */
+}
+
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
 #boot-screen{position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
   background:radial-gradient(circle at 50% 42%,#2c2458 0%,#161232 50%,#070611 100%);
@@ -303,6 +325,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 <aside id="sidebar-right">
   <div id="q-list-right"></div>
 </aside>
+<div id="mobile-sb-toggle" title="サイドバー表示/非表示">☰</div>
 <div id="canvas-wrap">
   <div id="canvas-inner">
     <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
@@ -1954,6 +1977,149 @@ wrap.addEventListener('contextmenu',e=>{
 document.addEventListener('mousedown',e=>{
   if(!ctxMenu.contains(e.target))hideCtx();
 });
+document.addEventListener('touchstart',e=>{
+  if(ctxMenu.style.display==='block'&&!ctxMenu.contains(e.target))hideCtx();
+},{passive:true});
+
+// ═══════════════════════════════════════
+//  MOBILE / TOUCH SUPPORT
+// ═══════════════════════════════════════
+const touchDist=(a,b)=>Math.hypot(a.clientX-b.clientX,a.clientY-b.clientY);
+let _tPan=null,_pinch=null;
+// canvas pan (1 finger) + pinch zoom (2 fingers)
+wrap.addEventListener('touchstart',e=>{
+  if(e.touches.length===2){
+    e.preventDefault();_tPan=null;
+    const[a,b]=e.touches;
+    _pinch={d:touchDist(a,b)};
+  } else if(e.touches.length===1){
+    const t=e.touches[0];
+    if(t.target.closest&&t.target.closest('.card,.branch,.subtitle,.imgel,.desc-box,.card-add-btn,.alabel,.ahit'))return; // element handles itself
+    e.preventDefault();
+    if(S.connecting){cancelConnect();}
+    clearSelection();
+    _tPan={sx:t.clientX,sy:t.clientY,px:S.panX,py:S.panY};_pinch=null;
+  }
+},{passive:false});
+wrap.addEventListener('touchmove',e=>{
+  if(_pinch&&e.touches.length===2){
+    e.preventDefault();
+    const[a,b]=e.touches;const nd=touchDist(a,b);
+    const f=nd/_pinch.d;_pinch.d=nd;
+    zoomAt((a.clientX+b.clientX)/2,(a.clientY+b.clientY)/2,f);
+  } else if(_tPan&&e.touches.length===1){
+    e.preventDefault();
+    const t=e.touches[0];
+    S.panX=_tPan.px+(t.clientX-_tPan.sx);S.panY=_tPan.py+(t.clientY-_tPan.sy);applyTf();
+  }
+},{passive:false});
+const endTouchPan=e=>{ if(e.touches.length===0){_tPan=null;_pinch=null;} else if(e.touches.length<2)_pinch=null; };
+wrap.addEventListener('touchend',endTouchPan);
+wrap.addEventListener('touchcancel',endTouchPan);
+
+// element touch: tap=edit, drag=move, long-press=menu, (while connecting) tap=connect
+function openEditorForElement(id,x,y){
+  if(cardById(id))openCardEditor(id);
+  else if(branchById(id))openBranchEditor(id);
+  else if(S.subtitles.find(s=>s.id===id))openSubtitleEditor(id);
+  else if(S.images.find(i=>i.id===id))onImageCtx({clientX:x,clientY:y,preventDefault(){},stopPropagation(){}},id);
+}
+function openCtxForElement(id,x,y){
+  const fake={clientX:x,clientY:y,preventDefault(){},stopPropagation(){}};
+  if(cardById(id))onCardCtx(fake,id);
+  else if(branchById(id))onBranchCtx(fake,id);
+  else if(S.subtitles.find(s=>s.id===id))onSubtitleCtx(fake,id);
+  else if(S.images.find(i=>i.id===id))onImageCtx(fake,id);
+}
+function elementTouchStart(e,id){
+  if(e.touches.length!==1)return;
+  e.stopPropagation();e.preventDefault();
+  if(S.connecting){ if(S.connecting.fromId!==id){createArrow(S.connecting.fromId,id);S.connecting=null;render();} return; }
+  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;
+  const node=selById(id);if(!node)return;
+  const ox=node.x,oy=node.y;
+  let moved=false,longFired=false;
+  const lp=setTimeout(()=>{ if(!moved){longFired=true;cleanup();openCtxForElement(id,sx,sy);} },480);
+  const move=(cx,cy)=>{
+    if(longFired)return;
+    if(!moved&&(Math.abs(cx-sx)>7||Math.abs(cy-sy)>7)){moved=true;clearTimeout(lp);}
+    if(moved){
+      const sp=s2c(sx,sy),cp=s2c(cx,cy);
+      node.x=clampW(ox+(cp.x-sp.x));node.y=clampW(oy+(cp.y-sp.y));
+      const el=elems.querySelector(`[data-id="${id}"]`);if(el){el.style.left=node.x+'px';el.style.top=node.y+'px';}
+      renderArrows();renderLabels();renderZones();renderDescs();
+    }
+  };
+  const tm=ev=>{if(ev.touches[0]){ev.preventDefault();move(ev.touches[0].clientX,ev.touches[0].clientY);}};
+  const te=()=>{cleanup();if(longFired)return;if(!moved)openEditorForElement(id,sx,sy);else scheduleCommit();};
+  function cleanup(){clearTimeout(lp);window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);window.removeEventListener('touchcancel',te);}
+  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);window.addEventListener('touchcancel',te);
+}
+function connectTouchStart(e,fromId){
+  if(e.touches.length!==1)return;
+  e.stopPropagation();e.preventDefault();
+  S.connecting={fromId};S.mouse=s2c(e.touches[0].clientX,e.touches[0].clientY);render();
+  const tm=ev=>{if(ev.touches[0]){ev.preventDefault();S.mouse=s2c(ev.touches[0].clientX,ev.touches[0].clientY);updateTempArrow();}};
+  const te=ev=>{
+    window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
+    const ch=ev.changedTouches[0];
+    const tgt=ch?document.elementFromPoint(ch.clientX,ch.clientY):null;
+    const host=tgt&&tgt.closest&&tgt.closest('.card,.branch');
+    if(host&&host.dataset.id&&host.dataset.id!==fromId)createArrow(fromId,host.dataset.id);
+    S.connecting=null;render();
+  };
+  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
+}
+function descTouchStart(e,id){
+  if(e.touches.length!==1)return;
+  e.stopPropagation();e.preventDefault();
+  const owner=ownerByDescId(id);if(!owner)return;const kind=descKindOf(id);
+  if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
+  const off0={x:owner.descOff.x,y:owner.descOff.y};const start=s2c(e.touches[0].clientX,e.touches[0].clientY);
+  const tm=ev=>{if(ev.touches[0]){ev.preventDefault();const cp=s2c(ev.touches[0].clientX,ev.touches[0].clientY);owner.descOff={x:clampW(off0.x+(cp.x-start.x)),y:clampW(off0.y+(cp.y-start.y))};renderDescs();}};
+  const te=()=>{window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);scheduleCommit();};
+  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
+}
+// delegate element touches on the canvas layer
+elems.addEventListener('touchstart',e=>{
+  const t=e.target;
+  const addBtn=t.closest&&t.closest('.card-add-btn');
+  if(addBtn){const host=addBtn.closest('.card,.branch');if(host)connectTouchStart(e,host.dataset.id);return;}
+  const descBox=t.closest&&t.closest('.desc-box');
+  if(descBox){descTouchStart(e,descBox.dataset.descId);return;}
+  const el=t.closest&&t.closest('.card,.branch,.subtitle,.imgel');
+  if(el)elementTouchStart(e,el.dataset.id);
+},{passive:false});
+// arrow line tap (touch) → open arrow editor / place branch
+arrsG.addEventListener('touchstart',e=>{
+  const hit=e.target.closest&&e.target.closest('.ahit');
+  if(!hit)return;
+  e.preventDefault();e.stopPropagation();
+  const ch=e.touches[0];
+  onArrowHitClick({clientX:ch.clientX,clientY:ch.clientY,stopPropagation(){},preventDefault(){}},hit.dataset.arrId);
+},{passive:false});
+
+// 手がかり (clue) touch: tap=edit, drag onto canvas=place
+function clueTouchStart(e,clueId){
+  if(e.touches.length!==1)return;
+  e.stopPropagation();e.preventDefault();
+  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;let moved=false;
+  const tm=ev=>{if(ev.touches[0]){const cx=ev.touches[0].clientX,cy=ev.touches[0].clientY;if(!moved&&(Math.abs(cx-sx)>8||Math.abs(cy-sy)>8))moved=true;if(moved)ev.preventDefault();}};
+  const te=ev=>{
+    window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
+    if(moved){const ch=ev.changedTouches[0];const r=wrap.getBoundingClientRect();
+      if(ch&&ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom){const pt=s2c(ch.clientX,ch.clientY);placeClueOnCanvas(clueId,pt.x,pt.y);}}
+    else openClueEditor(clueId);
+  };
+  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
+}
+document.getElementById('q-list-right').addEventListener('touchstart',e=>{
+  const it=e.target.closest&&e.target.closest('.clue-item');
+  if(it&&it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
+},{passive:false});
+
+// mobile sidebar show/hide
+document.getElementById('mobile-sb-toggle').onclick=()=>document.body.classList.toggle('sb-hidden');
 
 // Keyboard
 document.addEventListener('keydown',e=>{
