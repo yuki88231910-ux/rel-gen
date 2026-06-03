@@ -20,9 +20,23 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 #bg-sel{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 8px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
 #bg-sel option{background:#1e1e4a}
 
-/* ── CANVAS ── */
-#canvas-wrap{flex:1;overflow:hidden;position:relative;cursor:default}
+/* ── CONTENT / SIDEBAR / CANVAS ── */
+#content{flex:1;display:flex;min-height:0}
+#canvas-wrap{flex:1;min-width:0;overflow:hidden;position:relative;cursor:default}
 #canvas-inner{position:absolute;top:0;left:0;transform-origin:0 0}
+#sidebar{flex:0 0 220px;background:linear-gradient(180deg,#0f0f24,#0b0b18);border-right:2px solid #2a2a5a;display:flex;flex-direction:column;z-index:150;overflow:hidden}
+#sidebar-head{padding:11px 14px;font-size:14px;font-weight:bold;color:#c8a8ff;border-bottom:1px solid #2a2a5a;letter-spacing:.05em;flex-shrink:0}
+#q-list{flex:1;overflow-y:auto;padding:8px}
+.q-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:6px;border-radius:8px;background:#16162e;border:1px solid #2a2a5a;cursor:pointer;color:#d0d0ff;font-size:13px;transition:background .15s,border-color .15s}
+.q-item:hover{background:#1e1e44;border-color:#4a4a8a}
+.q-item.active{background:#2a1e55;border-color:#9a6aff;color:#fff}
+.q-item .q-ico{flex-shrink:0}
+.q-item .q-title{flex:1;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.q-item .q-del{opacity:0;color:#ff8888;flex-shrink:0;padding:0 3px;font-size:12px}
+.q-item:hover .q-del{opacity:.65}
+.q-item .q-del:hover{opacity:1}
+.qbtn-add{margin:8px;padding:9px;border-radius:8px;background:#1e1e4a;border:1px dashed #5a5a9a;color:#c8a8ff;cursor:pointer;font-size:13px;font-family:inherit;flex-shrink:0}
+.qbtn-add:hover{background:#2a2a6a;border-color:#8a8aca}
 
 /* backgrounds — applied to #canvas-wrap; size/position driven by pan & zoom */
 .bg-grid{background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px)}
@@ -254,6 +268,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <button class="mbtn" id="btn-add-card">＋ カード追加</button>
   <button class="mbtn" id="btn-branch-mode">⑂ 分岐ノード</button>
   <button class="mbtn" id="btn-add-subtitle">T サブタイトル</button>
+  <button class="mbtn" id="btn-add-text">あ テキスト</button>
   <button class="mbtn" id="btn-align" title="複数選択(Ctrl+クリック)した要素を整列" disabled>⬓ 配置 ▾</button>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
@@ -265,6 +280,12 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <button class="mbtn danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
 
+<div id="content">
+<aside id="sidebar">
+  <div id="sidebar-head">❓ 疑問</div>
+  <div id="q-list"></div>
+  <button id="q-add" class="qbtn-add">＋ 疑問を追加</button>
+</aside>
 <div id="canvas-wrap">
   <div id="canvas-inner">
     <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
@@ -291,6 +312,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
     <div id="elems"></div>
   </div>
 </div>
+</div>
 
 <div id="modal-overlay">
   <div class="modal" id="modal-box"></div>
@@ -314,6 +336,8 @@ const S = {
   panning:false, panSt:null,
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
+  // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
+  currentBoard:'main', questions:[], boards:{},
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 
@@ -474,6 +498,91 @@ function setKeyBadge(el,hasKey){
 // context-menu item to toggle the key marker on any object
 function keyMenuItem(obj){
   return {icon:'🔑',label:obj.key?'キーを外す':'キーを設定',action:()=>{obj.key=!obj.key;render();}};
+}
+
+// ═══════════════════════════════════════
+//  BOARDS / 疑問 (multi-diagram)
+// ═══════════════════════════════════════
+function boardData(){
+  return {cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
+    subtitles:S.subtitles,images:S.images,panX:S.panX,panY:S.panY,zoom:S.zoom};
+}
+function saveActiveBoard(){ S.boards[S.currentBoard]=boardData(); }
+function loadActiveBoard(){
+  const b=S.boards[S.currentBoard]||{};
+  S.cards=b.cards||[];S.arrows=b.arrows||[];S.branches=b.branches||[];S.zones=b.zones||[];
+  S.subtitles=b.subtitles||[];S.images=b.images||[];
+  S.panX=b.panX==null?60:b.panX; S.panY=b.panY==null?60:b.panY; S.zoom=b.zoom||1;
+  S.selection=[];
+}
+function switchBoard(id){
+  if(id===S.currentBoard)return;
+  if(id!=='main'&&!S.boards[id])return;
+  saveActiveBoard();
+  S.currentBoard=id;
+  loadActiveBoard();
+  render();applyTf();renderSidebar();resetHistory();
+}
+function addQuestion(){
+  showModal(`
+    <h2>疑問を追加</h2>
+    <div class="fg"><label>疑問のタイトル（気になったこと）</label>
+      <input type="text" id="q-title" placeholder="例: なぜ図書館に呪いが？"></div>
+    <div class="mact">
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="q-ok">作成して開く</button>
+    </div>`,()=>{
+    const inp=document.getElementById('q-title');inp.focus();
+    const ok=()=>{
+      const id='q'+uid();
+      S.questions.push({id,title:(inp.value||'').trim()||'新しい疑問'});
+      S.boards[id]={cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[],panX:60,panY:60,zoom:1};
+      hideModal();renderSidebar();switchBoard(id);
+    };
+    document.getElementById('q-ok').onclick=ok;
+    inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
+}
+function renameQuestion(id){
+  const q=S.questions.find(x=>x.id===id);if(!q)return;
+  showModal(`
+    <h2>疑問のタイトル</h2>
+    <div class="fg"><input type="text" id="q-title" value="${esc(q.title)}"></div>
+    <div class="mact">
+      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
+      <button class="btn btn-p" id="q-ok">保存</button>
+    </div>`,()=>{
+    const inp=document.getElementById('q-title');inp.focus();inp.select();
+    const ok=()=>{q.title=(inp.value||'').trim()||'疑問';hideModal();renderSidebar();};
+    document.getElementById('q-ok').onclick=ok;
+    inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
+}
+function deleteQuestion(id){
+  S.questions=S.questions.filter(q=>q.id!==id);
+  delete S.boards[id];
+  if(S.currentBoard===id){S.currentBoard='main';loadActiveBoard();render();applyTf();resetHistory();}
+  renderSidebar();
+}
+function renderSidebar(){
+  const list=document.getElementById('q-list');if(!list)return;
+  list.innerHTML='';
+  const entries=[{id:'main',title:'メイン',ico:'🏠'}].concat(S.questions.map(q=>({id:q.id,title:q.title,ico:'❓',isQ:true})));
+  entries.forEach(en=>{
+    const it=document.createElement('div');
+    it.className='q-item'+(en.id===S.currentBoard?' active':'');
+    const ico=document.createElement('span');ico.className='q-ico';ico.textContent=en.ico;
+    const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.title;ti.title=en.title;
+    it.appendChild(ico);it.appendChild(ti);
+    if(en.isQ){
+      const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
+      del.onclick=e=>{e.stopPropagation();if(confirm('この疑問とその関係図を削除しますか？'))deleteQuestion(en.id);};
+      it.appendChild(del);
+      it.ondblclick=e=>{e.stopPropagation();renameQuestion(en.id);};
+    }
+    it.onclick=()=>switchBoard(en.id);
+    list.appendChild(it);
+  });
 }
 
 // ═══════════════════════════════════════
@@ -1032,10 +1141,16 @@ function renderSubtitles(){
       elems.appendChild(el);
     } else ex.delete(st.id);
     el.style.left=st.x+'px';el.style.top=st.y+'px';
-    el.textContent=st.text||'サブタイトル';   // (wipes children → set badge after)
+    el.textContent=st.text||'テキスト';   // (wipes children → set badge after)
     el.style.fontSize=(st.size||22)+'px';
     el.style.color=st.color||'#ffffff';
+    // subtitle vs plain text differ only by border thickness (+ its decorated box)
+    const bw=(st.border==null?3:st.border);
+    el.style.borderStyle=bw>0?'solid':'none';
+    el.style.borderWidth=bw+'px';
     el.style.borderColor=st.borderColor||'#c8a8ff';
+    el.style.background=bw>0?'rgba(0,0,0,.55)':'transparent';
+    el.style.padding=bw>0?'8px 18px':'2px 6px';
     setKeyBadge(el,st.key);
   });
   ex.forEach(e=>e.remove());
@@ -1203,7 +1318,12 @@ function addBranch(x,y){
 
 function addSubtitle(){
   const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
-  S.subtitles.push({id:uid(),x:c.x-80,y:c.y-20,text:'サブタイトル',size:22,color:'#ffffff',borderColor:'#c8a8ff'});
+  S.subtitles.push({id:uid(),x:c.x-90,y:c.y-20,text:'サブタイトル',size:28,color:'#ffffff',border:3,borderColor:'#c8a8ff'});
+  render();
+}
+function addText(){
+  const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
+  S.subtitles.push({id:uid(),x:c.x-40,y:c.y-12,text:'テキスト',size:16,color:'#ffffff',border:0,borderColor:'#c8a8ff'});
   render();
 }
 
@@ -1485,10 +1605,16 @@ function renderZoneList(cardId){
 // ── SUBTITLE EDITOR ──
 function openSubtitleEditor(id){
   const st=S.subtitles.find(s=>s.id===id);if(!st)return;
+  const bw=(st.border==null?3:st.border);
   showModal(`
-    <h2>サブタイトルの編集</h2>
+    <h2>テキストの編集</h2>
     <div class="fg"><label>テキスト</label><input type="text" id="ste-txt" value="${esc(st.text)}"></div>
-    <div class="fg"><label>文字サイズ (px)</label><input type="number" id="ste-size" value="${st.size||22}" min="12" max="72" style="width:80px"></div>
+    <div class="fg"><label>文字サイズ (px)</label><input type="number" id="ste-size" value="${st.size||22}" min="8" max="96" style="width:80px"></div>
+    <div class="fg"><label>枠の太さ (px / 0=枠なし＝通常テキスト)</label>
+      <div class="thick-btns">
+        ${[0,2,3,5,8].map(w=>`<button type="button" class="thick-btn${bw===w?' sel':''}" data-w="${w}">${w}</button>`).join('')}
+      </div>
+    </div>
     <div class="fg"><label>文字色</label><input type="color" id="ste-col" value="${st.color||'#ffffff'}"></div>
     <div class="fg"><label>枠の色</label><input type="color" id="ste-bcol" value="${st.borderColor||'#c8a8ff'}"></div>
     <div class="mact">
@@ -1497,9 +1623,16 @@ function openSubtitleEditor(id){
       <button class="btn btn-p" id="ste-save">保存</button>
     </div>
   `,()=>{
+    let selB=bw;
+    document.querySelectorAll('.thick-btn').forEach(b=>b.addEventListener('click',()=>{
+      selB=parseInt(b.dataset.w);
+      document.querySelectorAll('.thick-btn').forEach(x=>x.classList.remove('sel'));
+      b.classList.add('sel');
+    }));
     document.getElementById('ste-save').onclick=()=>{
       st.text=document.getElementById('ste-txt').value;
       st.size=parseInt(document.getElementById('ste-size').value)||22;
+      st.border=selB;
       st.color=document.getElementById('ste-col').value;
       st.borderColor=document.getElementById('ste-bcol').value;
       hideModal();render();
@@ -1733,6 +1866,8 @@ document.getElementById('btn-branch-mode').onclick=function(){
 };
 
 document.getElementById('btn-add-subtitle').onclick=addSubtitle;
+document.getElementById('btn-add-text').onclick=addText;
+document.getElementById('q-add').onclick=addQuestion;
 
 document.getElementById('btn-toggle-desc').onclick=function(){
   S.showDesc=!S.showDesc;
@@ -1754,9 +1889,15 @@ document.getElementById('btn-del-all').onclick=()=>{
 
 // ── SAVE ──
 function saveFile(){
+  saveActiveBoard();
   const data={
     title:'相互関係ジェネレーター',
+    version:2,
     bg:S.bg,showDesc:S.showDesc,
+    currentBoard:S.currentBoard,
+    questions:S.questions,
+    boards:S.boards,
+    // also include the active board's arrays flat for older readers
     cards:S.cards,arrows:S.arrows,branches:S.branches,
     zones:S.zones,subtitles:S.subtitles,images:S.images
   };
@@ -1778,15 +1919,20 @@ document.getElementById('file-input').onchange=e=>{
       const d=JSON.parse(ev.target.result);
       S.bg=d.bg||'grid';
       S.showDesc=d.showDesc!==false; // default ON unless the file explicitly turned it off
-      S.cards=d.cards||[];
-      S.arrows=d.arrows||[];
-      S.branches=d.branches||[];
-      S.zones=d.zones||[];
-      S.subtitles=d.subtitles||[];
-      S.images=d.images||[];
+      if(d.boards){
+        S.boards=d.boards;
+        S.questions=d.questions||[];
+        S.currentBoard=(d.currentBoard&&d.boards[d.currentBoard])?d.currentBoard:'main';
+        if(!S.boards.main)S.boards.main={cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[]};
+      } else {
+        // legacy flat format → main board only
+        S.boards={main:{cards:d.cards||[],arrows:d.arrows||[],branches:d.branches||[],zones:d.zones||[],subtitles:d.subtitles||[],images:d.images||[]}};
+        S.questions=[]; S.currentBoard='main';
+      }
+      loadActiveBoard();
       document.getElementById('bg-sel').value=S.bg;
       document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
-      render();
+      render();applyTf();renderSidebar();
       resetHistory(); // loaded file becomes the new undo baseline
     }catch(err){alert('読み込みエラー: '+err.message);}
   };
@@ -1813,9 +1959,10 @@ render();
     {id:uid(),from:id3,to:id1,name:'師弟',icon:'',color:'#c8a8ff',width:2,desc:'',curve:0,dashed:false}
   );
   S.zones.push({id:uid(),name:'勇者パーティ',color:'#3498db',cardIds:[id1,id3]});
-  S.subtitles.push({id:uid(),x:250,y:70,text:'キャラクター相関図',size:28,color:'#ffffff',borderColor:'#c8a8ff'});
+  S.subtitles.push({id:uid(),x:250,y:70,text:'キャラクター相関図',size:28,color:'#ffffff',border:3,borderColor:'#c8a8ff'});
   render();
 })();
+renderSidebar();
 resetHistory(); // establish the initial undo baseline immediately
 
 // ═══════════════════════════════════════
