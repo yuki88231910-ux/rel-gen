@@ -45,6 +45,14 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .q-item.q-dragging{opacity:.4}
 .q-item.q-over-top{box-shadow:inset 0 3px 0 #c8a8ff,0 2px 10px rgba(0,0,0,.4)}
 .q-item.q-over-bottom{box-shadow:inset 0 -3px 0 #c8a8ff,0 2px 10px rgba(0,0,0,.4)}
+/* section toggle row (show/hide all) */
+.q-section{display:flex;justify-content:space-between;align-items:center;padding:9px 10px 3px;font-size:11px;font-weight:bold;color:#9a9ad0;letter-spacing:.06em;pointer-events:auto;cursor:pointer;user-select:none}
+.q-section:hover{color:#c8a8ff}
+.q-section .q-eye{font-size:13px;opacity:.85}
+.q-section.off{color:#6a6a8a}
+/* clue (手がかり) card: name + image/icon thumbnail */
+.clue-item .clue-thumb{flex-shrink:0;width:26px;height:26px;border-radius:6px;display:flex;align-items:center;justify-content:center;font-size:15px;overflow:hidden;color:#fff;box-shadow:0 1px 3px rgba(0,0,0,.4)}
+.clue-item .clue-thumb img{width:100%;height:100%;object-fit:cover}
 
 /* backgrounds — applied to #canvas-wrap; size/position driven by pan & zoom */
 .bg-grid{background-image:linear-gradient(rgba(255,255,255,.08) 1px,transparent 1px),linear-gradient(90deg,rgba(255,255,255,.08) 1px,transparent 1px)}
@@ -343,6 +351,7 @@ const S = {
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
   currentBoard:'main', questions:[], boards:{},
+  clues:[], showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 
@@ -614,17 +623,88 @@ function moveQuestion(draggedId,targetId,after){
   if(ti<0)S.questions.push(item); else S.questions.splice(after?ti+1:ti,0,item);
   renderSidebar();
 }
+function sectionRow(label,visible,onToggle){
+  const d=document.createElement('div');d.className='q-section'+(visible?'':' off');
+  const l=document.createElement('span');l.textContent=label;
+  const e=document.createElement('span');e.className='q-eye';e.textContent=visible?'👁':'🙈';
+  d.appendChild(l);d.appendChild(e);d.onclick=onToggle;
+  return d;
+}
+function addItemEl(label,title,onClick){
+  const a=document.createElement('div');a.className='q-item q-add-item';a.textContent='＋';a.title=title;a.onclick=onClick;return a;
+}
+function makeClueItem(c){
+  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.clueId=c.id;
+  const th=document.createElement('span');th.className='clue-thumb';
+  if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
+  else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'手がかり';ti.title=c.name||'';
+  const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
+  del.onclick=e=>{e.stopPropagation();if(confirm('この手がかりを削除しますか？'))deleteClue(c.id);};
+  it.appendChild(th);it.appendChild(ti);it.appendChild(del);
+  it.onclick=()=>openClueEditor(c.id);
+  it.classList.add('q-drag-h');
+  it.draggable=true;
+  it.addEventListener('dragstart',ev=>{_dragClueId=c.id;try{ev.dataTransfer.effectAllowed='copy';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+  it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragClueId=null;});
+  return it;
+}
 function renderSidebar(){
   const list=document.getElementById('q-list');if(!list)return;
   list.innerHTML='';
-  // 1) main board, 2) add-question button, 3) each question
+  // main board
   list.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
-  const add=document.createElement('div');
-  add.className='q-item q-add-item';
-  add.textContent='＋';add.title='疑問を追加';
-  add.onclick=addQuestion;
-  list.appendChild(add);
-  S.questions.forEach(q=>list.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+  // ── 疑問 section ──
+  list.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
+  list.appendChild(addItemEl('＋','疑問を追加',addQuestion));
+  if(S.showQuestions)S.questions.forEach(q=>list.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+  // ── 手がかり section ──
+  list.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
+  list.appendChild(addItemEl('＋','手がかりを追加',addClue));
+  if(S.showClues)S.clues.forEach(c=>list.appendChild(makeClueItem(c)));
+}
+let _dragClueId=null;
+function addClue(){
+  const id=uid();
+  S.clues.push({id,name:'手がかり',sub:'',color:'#e67e22',image:null,icon:'🔍',shape:'rect',desc:'',w:150,textScale:1});
+  renderSidebar();openClueEditor(id);
+}
+function deleteClue(id){S.clues=S.clues.filter(c=>c.id!==id);renderSidebar();}
+function placeClueOnCanvas(clueId,x,y){
+  const c=S.clues.find(q=>q.id===clueId);if(!c)return;
+  S.cards.push({id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
+    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[]});
+  render();
+}
+function openClueEditor(id){
+  const c=S.clues.find(x=>x.id===id);if(!c)return;
+  showModal(`
+    <h2>手がかりカードの編集</h2>
+    <div class="fg"><label>名称</label><input type="text" id="cl-name" value="${esc(c.name)}"></div>
+    <div class="fg"><label>サブ情報</label><input type="text" id="cl-sub" value="${esc(c.sub||'')}"></div>
+    <div class="fg"><label>色</label><div class="color-row"><input type="color" id="cl-color" value="${c.color||'#e67e22'}">${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}"></div>`).join('')}</div></div>
+    <div class="fg"><label>枠の形</label><select id="cl-shape"><option value="rect"${c.shape==='rect'?' selected':''}>□ 四角</option><option value="circle"${c.shape==='circle'?' selected':''}>○ 円形</option><option value="bubble"${c.shape==='bubble'?' selected':''}>💬 吹き出し</option></select></div>
+    <div class="fg"><label>アイコン（画像なし時）</label><div class="icon-grid" id="cl-icon-grid"></div>
+      <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><label style="font-size:11px;color:#888">カスタム絵文字</label><input type="text" id="cl-cicon" value="${esc(c.icon)}" style="width:60px;text-align:center;font-size:18px"></div></div>
+    <div class="fg"><label>画像</label><div style="display:flex;gap:8px;align-items:center"><button class="btn btn-s" id="cl-imgbtn">📁 画像を選択</button>${c.image?'<button class="btn btn-s" id="cl-clrimg">🗑 削除</button><img src="'+c.image+'" style="height:40px;border-radius:4px">':''}</div></div>
+    <div class="fg"><label>幅 (px)</label><input type="number" id="cl-w" value="${c.w||150}" min="80" max="600" style="width:80px"></div>
+    <div class="fg"><label>解説</label><textarea id="cl-desc">${esc(c.desc||'')}</textarea></div>
+    <div class="mact"><button class="btn btn-d" id="cl-del">🗑 削除</button><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="cl-save">保存</button></div>
+  `,()=>{
+    buildIconGrid('cl-icon-grid',c.icon,v=>document.getElementById('cl-cicon').value=v);
+    document.querySelectorAll('.color-preset').forEach(p=>p.addEventListener('click',()=>{document.getElementById('cl-color').value=p.dataset.col;}));
+    const imgInp=document.createElement('input');imgInp.type='file';imgInp.accept='image/*';
+    imgInp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{c.image=ev.target.result;openClueEditor(id);};r.readAsDataURL(f);};
+    document.getElementById('cl-imgbtn').onclick=()=>imgInp.click();
+    const clr=document.getElementById('cl-clrimg');if(clr)clr.onclick=()=>{c.image=null;openClueEditor(id);};
+    document.getElementById('cl-save').onclick=()=>{
+      c.name=document.getElementById('cl-name').value;c.sub=document.getElementById('cl-sub').value;
+      c.color=document.getElementById('cl-color').value;c.shape=document.getElementById('cl-shape').value;
+      c.icon=document.getElementById('cl-cicon').value||'✦';c.w=parseInt(document.getElementById('cl-w').value)||150;
+      c.desc=document.getElementById('cl-desc').value;hideModal();renderSidebar();
+    };
+    document.getElementById('cl-del').onclick=()=>{deleteClue(id);hideModal();};
+  });
 }
 
 // ═══════════════════════════════════════
@@ -1816,6 +1896,16 @@ wrap.addEventListener('wheel',e=>{
   zoomAt(e.clientX,e.clientY,e.deltaY<0?1.1:.9);
 },{passive:false});
 
+// Drop a 手がかり (clue) card from the sidebar onto the canvas → place it as a card
+wrap.addEventListener('dragover',e=>{ if(_dragClueId){e.preventDefault();try{e.dataTransfer.dropEffect='copy';}catch(_){}}});
+wrap.addEventListener('drop',e=>{
+  if(!_dragClueId)return;
+  e.preventDefault();
+  const pt=s2c(e.clientX,e.clientY);
+  placeClueOnCanvas(_dragClueId,pt.x,pt.y);
+  _dragClueId=null;
+});
+
 // Pan on canvas mousedown (empty space)
 wrap.addEventListener('mousedown',e=>{
   const onArrow=e.target.classList&&e.target.classList.contains('ahit');
@@ -1942,6 +2032,9 @@ function saveFile(){
     bg:S.bg,showDesc:S.showDesc,
     currentBoard:S.currentBoard,
     questions:S.questions,
+    clues:S.clues,
+    showQuestions:S.showQuestions,
+    showClues:S.showClues,
     boards:S.boards,
     // also include the active board's arrays flat for older readers
     cards:S.cards,arrows:S.arrows,branches:S.branches,
@@ -1965,6 +2058,9 @@ document.getElementById('file-input').onchange=e=>{
       const d=JSON.parse(ev.target.result);
       S.bg=d.bg||'grid';
       S.showDesc=d.showDesc!==false; // default ON unless the file explicitly turned it off
+      S.clues=d.clues||[];
+      S.showQuestions=d.showQuestions!==false;
+      S.showClues=d.showClues!==false;
       if(d.boards){
         S.boards=d.boards;
         S.questions=d.questions||[];
