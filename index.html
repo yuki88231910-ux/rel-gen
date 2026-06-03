@@ -2409,9 +2409,9 @@ document.getElementById('bg-sel').onchange=function(){
 };
 
 document.getElementById('btn-del-all').onclick=()=>{
-  if(confirm('すべての要素を削除しますか？この操作は元に戻せません。')){
-    S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];S.layers=[];S.activeLayer='all';renderAll();
-  }
+  if(!confirm('すべての要素を削除しますか？この操作は元に戻せません。'))return;
+  if(!confirm('本当に削除します。よろしいですか？（最終確認）'))return;
+  S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];S.layers=[];S.activeLayer='all';renderAll();
 };
 
 // ── SAVE ──
@@ -2518,13 +2518,29 @@ function updateCloudUI(){
     if(sb)sb.disabled=true; setCloudStatus('');
   }
 }
+let _loginPromptShown=false;
+function promptLogin(){
+  if(!cloudReady()||fbUser)return;
+  showModal(`<h2>👤 Googleでログイン</h2>
+    <div class="fg" style="color:#cfcfe6;font-size:13px;line-height:1.7">ログインすると、作った図が<b>クラウドに自動保存</b>され、<b>共有リンク</b>で他の人と同じ図を編集できます。<br>ログインせずローカルのまま使うこともできます。</div>
+    <div class="mact">
+      <button class="btn btn-s" onclick="hideModal()">ログインせずに使う</button>
+      <button class="btn btn-p" id="lp-login">Googleでログイン</button>
+    </div>`,()=>{
+    document.getElementById('lp-login').onclick=()=>{hideModal();cloudLogin();};
+  });
+}
 function onAuthChanged(user){
   fbUser=user||null; updateCloudUI();
   if(user){
     const h=hashDocId();
     cloudDocId = h || user.uid;
     cloudLoad(cloudDocId, !h); // own doc auto-created if missing; shared doc must exist
-  } else { cloudDocId=null; }
+  } else {
+    cloudDocId=null;
+    // not signed in → prompt the Google login once (the actual popup opens on the button = reliable across browsers)
+    if(!_loginPromptShown){ _loginPromptShown=true; setTimeout(promptLogin,300); }
+  }
 }
 function cloudLogin(){
   if(!cloudReady())return alert('Firebaseが読み込まれていません（オフライン/ファイル直開きでは利用できません）。公開URLで試してください。');
