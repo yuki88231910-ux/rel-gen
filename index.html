@@ -858,10 +858,9 @@ function renderSidebar(){
     buildClueSection(L);
     buildCardSection(L);
   } else {
-    // desktop: left = メイン/疑問, right = レイヤー/カード/手がかり (unchanged)
-    buildMainSection(L);
+    // desktop: left = 疑問, right = レイヤー(メイン内包)/カード/手がかり
     buildQuestionSection(L);
-    buildLayerSection(R,false);
+    buildLayerSection(R,true);  // メイン merged into the layer section
     buildCardSection(R);
     buildClueSection(R);
   }
