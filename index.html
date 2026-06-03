@@ -87,6 +87,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;max-width:240px;white-space:pre-wrap;word-break:break-word;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)}
 .desc-box:hover{border-color:rgba(190,170,255,.9);background:rgba(16,16,40,.97)}
 .desc-box.dragging{border-style:solid;border-color:#c8a8ff}
+.layer-tag{font-weight:bold;cursor:pointer;pointer-events:auto;text-decoration:underline;text-underline-offset:2px}
+.layer-tag:hover{filter:brightness(1.25)}
 .card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
 .card-add-btn:hover{background:#2277cc}
 /* "key" marker badge shown on flagged objects */
@@ -403,8 +405,11 @@ const S = {
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
   currentBoard:'main', questions:[], boards:{},
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
+  showCards:true, showLayers:true,                              // right-sidebar section toggles
+  layers:[], activeLayer:'all',                                 // 時系列レイヤー (per board)
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
+const LAYER_COLORS=['#ff6b6b','#4dabf7','#51cf66','#ffd43b','#cc5de8','#ff922b','#20c997','#f06595'];
 
 let _uid=0;
 const uid=()=>'n'+(++_uid)+'_'+Math.random().toString(36).slice(2,5);
@@ -571,7 +576,8 @@ function keyMenuItem(obj){
 // ═══════════════════════════════════════
 function boardData(){
   return {cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
-    subtitles:S.subtitles,images:S.images,panX:S.panX,panY:S.panY,zoom:S.zoom};
+    subtitles:S.subtitles,images:S.images,panX:S.panX,panY:S.panY,zoom:S.zoom,
+    layers:S.layers,activeLayer:S.activeLayer};
 }
 function saveActiveBoard(){ S.boards[S.currentBoard]=boardData(); }
 function loadActiveBoard(){
@@ -579,8 +585,46 @@ function loadActiveBoard(){
   S.cards=b.cards||[];S.arrows=b.arrows||[];S.branches=b.branches||[];S.zones=b.zones||[];
   S.subtitles=b.subtitles||[];S.images=b.images||[];
   S.panX=b.panX==null?60:b.panX; S.panY=b.panY==null?60:b.panY; S.zoom=b.zoom||1;
+  S.layers=b.layers||[]; S.activeLayer=b.activeLayer||'all';
   S.selection=[];
 }
+// ── 時系列レイヤー ──
+// An element belongs to the layers named by [[layer]] tags in its description.
+// No tag → "base": always visible. View shows: activeLayer==='all' → everything; else base + that layer's elements.
+function elementLayerIds(obj){
+  if(!obj||!obj.desc)return [];
+  const ids=[]; const re=/\[\[([^\]]+)\]\]/g; let m;
+  while((m=re.exec(obj.desc))){ const ly=S.layers.find(l=>l.name===m[1].trim()); if(ly&&!ids.includes(ly.id))ids.push(ly.id); }
+  return ids;
+}
+function inLayer(obj){
+  if(S.activeLayer==='all')return true;
+  const ids=elementLayerIds(obj);
+  return ids.length===0 || ids.includes(S.activeLayer);
+}
+function switchLayer(id){ S.activeLayer=id; render(); renderSidebar(); }
+function addLayer(name){
+  const id='ly'+uid();
+  S.layers.push({id,name:(name||'').trim()||('レイヤー'+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length]});
+  renderSidebar(); scheduleCommit();
+  return id;
+}
+function renameLayer(id){
+  const ly=S.layers.find(l=>l.id===id);if(!ly)return;
+  showModal(`<h2>レイヤー名</h2><div class="fg"><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
+    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">保存</button></div>`,()=>{
+    const inp=document.getElementById('ly-name');inp.focus();inp.select();
+    const ok=()=>{ly.name=(inp.value||'').trim()||ly.name;hideModal();render();renderSidebar();scheduleCommit();};
+    document.getElementById('ly-ok').onclick=ok; inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
+}
+function deleteLayer(id){
+  S.layers=S.layers.filter(l=>l.id!==id);
+  if(S.activeLayer===id)S.activeLayer='all';
+  render();renderSidebar();scheduleCommit();
+}
+function layerById(id){return S.layers.find(l=>l.id===id);}
+function inLayerById(id){const o=cardById(id)||branchById(id);return o?inLayer(o):true;}
 function switchBoard(id){
   if(id===S.currentBoard)return;
   if(id!=='main'&&!S.boards[id])return;
@@ -701,6 +745,70 @@ function makeClueItem(c){
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragClueId=null;});
   return it;
 }
+let _dragCardMoveId=null;
+function makeLayerItem(en){ // en: {id, name, color, isLayer}
+  const it=document.createElement('div');it.className='q-item'+(S.activeLayer===en.id?' active':'');
+  const ico=document.createElement('span');ico.className='q-ico';
+  if(en.isLayer){ico.textContent='●';ico.style.color=en.color;}else ico.textContent='◎';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.name;ti.title=en.name;
+  it.appendChild(ico);it.appendChild(ti);
+  if(en.isLayer){
+    const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
+    del.onclick=e=>{e.stopPropagation();if(confirm('このレイヤーを削除しますか？（要素・解説タグは残ります）'))deleteLayer(en.id);};
+    it.appendChild(del);
+    it.ondblclick=e=>{e.stopPropagation();renameLayer(en.id);};
+    it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameLayer(en.id);};
+  }
+  it.onclick=()=>switchLayer(en.id);
+  return it;
+}
+function focusCard(id){
+  const c=cardById(id);if(!c)return;
+  if(!inLayer(c))S.activeLayer='all'; // make sure it's visible
+  S.selection=[id];
+  const r=wrap.getBoundingClientRect();
+  S.panX=r.width/2-(c.x+cardEffW(c)/2)*S.zoom;
+  S.panY=r.height/2-(c.y+cardEffH(c)/2)*S.zoom;
+  applyTf();render();
+}
+function makeCardListItem(c){
+  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;
+  const th=document.createElement('span');th.className='clue-thumb';
+  if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
+  else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
+  it.appendChild(th);it.appendChild(ti);
+  it.onclick=()=>focusCard(c.id);
+  it.classList.add('q-drag-h');it.draggable=true;
+  it.addEventListener('dragstart',ev=>{_dragCardMoveId=c.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+  it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardMoveId=null;});
+  return it;
+}
+function promptAddLayer(){
+  showModal(`<h2>時系列レイヤーを追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
+    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">追加</button></div>`,()=>{
+    const inp=document.getElementById('ly-name');inp.focus();
+    const ok=()=>{const id=addLayer(inp.value);hideModal();switchLayer(id);};
+    document.getElementById('ly-ok').onclick=ok;inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
+}
+// layer-tag chips for description editors: insert [[layer]] into a textarea
+function layerChipsHtml(){
+  if(!S.layers.length)return `<div style="font-size:11px;color:#888;margin-top:6px">※レイヤーは右サイドバー「時系列レイヤー」の＋で追加できます</div>`;
+  return `<div style="font-size:11px;color:#888;margin-top:6px">レイヤータグを挿入（クリックで解説に追加・本文から消せば削除）：</div>`+
+    `<div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px">`+
+    S.layers.map(l=>`<button type="button" class="layer-chip" data-name="${esc(l.name)}" style="background:${l.color};border:none;color:#fff;padding:5px 11px;border-radius:13px;font-size:12px;cursor:pointer">＋${esc(l.name)}</button>`).join('')+
+    `</div>`;
+}
+function wireLayerChips(taId){
+  document.querySelectorAll('.layer-chip').forEach(b=>b.onclick=()=>{
+    const ta=document.getElementById(taId);if(!ta)return;
+    const tag='[['+b.dataset.name+']]';
+    const s=ta.selectionStart??ta.value.length, e=ta.selectionEnd??ta.value.length;
+    ta.value=ta.value.slice(0,s)+tag+ta.value.slice(e);
+    ta.focus();ta.selectionStart=ta.selectionEnd=s+tag.length;
+  });
+}
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
   if(!L||!R)return;
@@ -708,12 +816,22 @@ function renderSidebar(){
   // ── LEFT: メイン ──
   L.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
   if(S.showMain)L.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
-  // ── LEFT: 疑問 ── (hiding the section also hides its + button)
+  // ── LEFT: 疑問 ──
   L.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
   if(S.showQuestions){
     L.appendChild(addItemEl('＋','疑問を追加',addQuestion));
     S.questions.forEach(q=>L.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
   }
+  // ── RIGHT: 時系列レイヤー ──
+  R.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
+  if(S.showLayers){
+    R.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
+    R.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
+    S.layers.forEach(l=>R.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
+  }
+  // ── RIGHT: カード一覧 ──
+  R.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
+  if(S.showCards)S.cards.forEach(c=>R.appendChild(makeCardListItem(c)));
   // ── RIGHT: 手がかり ──
   R.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
   if(S.showClues){
@@ -732,7 +850,7 @@ function placeClueOnCanvas(clueId,x,y){
   const c=S.clues.find(q=>q.id===clueId);if(!c)return;
   S.cards.push({id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
     color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[]});
-  render();
+  renderAll();
 }
 function openClueEditor(id){
   const c=S.clues.find(x=>x.id===id);if(!c)return;
@@ -870,6 +988,8 @@ function render(){
   applySelectionClasses();
   scheduleCommit();
 }
+// render + refresh sidebar lists (use after card/clue/layer set changes)
+function renderAll(){ render(); renderSidebar(); }
 
 function updateBgClass(){
   wrap.classList.remove('bg-grid','bg-dots','bg-plain');
@@ -893,7 +1013,7 @@ function updateHints(){
 function renderZones(){
   zonesG.innerHTML='';
   S.zones.forEach(z=>{
-    const members=S.cards.filter(c=>z.cardIds.includes(c.id));
+    const members=S.cards.filter(c=>z.cardIds.includes(c.id)&&inLayer(c)); // only members visible in active layer
     if(!members.length)return;
     const col=z.color||'#4a9eff';
     // geometry of each member
@@ -968,6 +1088,7 @@ function renderArrows(){
   });
 
   S.arrows.forEach(arr=>{
+    if(!inLayer(arr)||!inLayerById(arr.from)||!inLayerById(arr.to))return; // hidden in active layer
     const p1=nodeCenter(arr.from),p2=nodeCenter(arr.to);
     if(!p1||!p2)return;
 
@@ -1013,6 +1134,7 @@ function renderCardDOMs(){
   const ex=new Map();
   elems.querySelectorAll('.card[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.cards.forEach(card=>{
+    if(!inLayer(card))return; // hidden by the active time-series layer
     let el=ex.get(card.id);
     if(!el){el=createCardEl(card);elems.appendChild(el);}
     else{ex.delete(card.id);updateCardEl(el,card);}
@@ -1100,6 +1222,7 @@ function renderBranchDOMs(){
   const ex=new Map();
   elems.querySelectorAll('.branch[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.branches.forEach(br=>{
+    if(!inLayer(br))return;
     let el=ex.get(br.id);
     if(!el){el=createBranchEl(br);elems.appendChild(el);}
     else{ex.delete(br.id);updateBranchEl(el,br);}
@@ -1157,6 +1280,7 @@ function renderLabels(){
   elems.querySelectorAll('.akey-badge[data-keyarr]').forEach(e=>kex.set(e.dataset.keyarr,e));
 
   S.arrows.forEach(arr=>{
+    if(!inLayer(arr)||!inLayerById(arr.from)||!inLayerById(arr.to))return; // match arrow visibility
     const mid=arrowMid(arr);
     if(!mid)return;
     // label (text only)
@@ -1217,13 +1341,24 @@ function rectEdgePt(cx,cy,hw,hh,fromX,fromY){
   const sc=Math.min(1,Math.min(sx,sy));
   return{x:cx+dx*sc,y:cy+dy*sc};
 }
+// build desc HTML with [[layerName]] tags rendered as clickable, coloured links
+function descHtml(text){
+  let out='',last=0,m;const re=/\[\[([^\]]+)\]\]/g;
+  while((m=re.exec(text))){
+    out+=esc(text.slice(last,m.index));
+    const name=m[1].trim(),ly=S.layers.find(l=>l.name===name);
+    out+= ly?`<span class="layer-tag" data-layer="${ly.id}" style="color:${ly.color}">${esc(name)}</span>`:esc(m[0]);
+    last=m.index+m[0].length;
+  }
+  return out+esc(text.slice(last));
+}
 function renderDescs(){
   const want=[];
   if(S.showDesc){
-    S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
-    S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
-    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
-    S.images.forEach(im=>{if(im.desc&&im.desc.trim())want.push({id:im.id,owner:im,kind:'image'});});
+    S.cards.forEach(c=>{if(c.desc&&c.desc.trim()&&inLayer(c))want.push({id:c.id,owner:c,kind:'card'});});
+    S.branches.forEach(b=>{if(b.desc&&b.desc.trim()&&inLayer(b))want.push({id:b.id,owner:b,kind:'branch'});});
+    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim()&&inLayer(a)&&inLayerById(a.from)&&inLayerById(a.to))want.push({id:a.id,owner:a,kind:'arrow'});});
+    S.images.forEach(im=>{if(im.desc&&im.desc.trim()&&inLayer(im))want.push({id:im.id,owner:im,kind:'image'});});
   }
   const ex=new Map();
   elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
@@ -1242,9 +1377,10 @@ function renderDescs(){
       box=document.createElement('div');box.className='desc-box';box.dataset.descId=w.id;
       box.addEventListener('mousedown',e=>onDescMousedown(e,w.id,w.kind));
       box.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onDescCtx(e,w.id,w.kind)});
+      box.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest('.layer-tag');if(t){e.stopPropagation();switchLayer(t.dataset.layer);}});
       elems.appendChild(box);
     } else ex.delete(w.id);
-    box.textContent=w.owner.desc;
+    box.innerHTML=descHtml(w.owner.desc); // renders [[layer]] tags as clickable bold+coloured links
     box.style.left=bx+'px';box.style.top=by+'px';
     box.style.fontSize=(11*(w.owner.descScale||1))+'px';
     // dotted leader line, clipped to the box edge
@@ -1262,6 +1398,7 @@ function renderDescs(){
 }
 function onDescMousedown(e,id,kind){
   if(e.button!==0)return;
+  if(e.target.classList&&e.target.classList.contains('layer-tag')){e.stopPropagation();return;} // let the tag click switch layers
   e.stopPropagation();e.preventDefault();
   const owner=ownerByDescId(id);if(!owner)return;
   if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
@@ -1297,12 +1434,13 @@ function openDescInput(id){
   const o=ownerByDescId(id);if(!o)return;
   showModal(`
     <h2>解説を編集</h2>
-    <div class="fg"><label>解説（改行可）</label><textarea id="di-desc" style="min-height:120px">${esc(o.desc||'')}</textarea></div>
+    <div class="fg"><label>解説（改行可）</label><textarea id="di-desc" style="min-height:120px">${esc(o.desc||'')}</textarea>${layerChipsHtml()}</div>
     <div class="mact">
       <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
       <button class="btn btn-p" id="di-save">保存</button>
     </div>
   `,()=>{
+    wireLayerChips('di-desc');
     document.getElementById('di-save').onclick=()=>{o.desc=document.getElementById('di-desc').value;hideModal();render();};
   });
 }
@@ -1341,6 +1479,7 @@ function renderImages(){
   const ex=new Map();
   elems.querySelectorAll('.imgel[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.images.forEach(im=>{
+    if(!inLayer(im))return;
     let el=ex.get(im.id);
     if(!el){
       el=document.createElement('div');el.className='imgel';el.dataset.id=im.id;
@@ -1488,7 +1627,7 @@ function addCard(){
   const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
   S.cards.push({id:uid(),x:c.x-75,y:c.y-45,w:150,h:90,name:'新しいカード',sub:'',
     color:'#9b59b6',image:null,icon:'✦',shape:'rect',desc:'',textScale:1,zoneIds:[]});
-  render();
+  renderAll();
 }
 
 function addBranch(x,y){
@@ -1514,7 +1653,7 @@ function deleteCard(id){
   S.cards=S.cards.filter(c=>c.id!==id);
   S.arrows=S.arrows.filter(a=>a.from!==id&&a.to!==id);
   S.zones.forEach(z=>z.cardIds=z.cardIds.filter(cid=>cid!==id));
-  render();
+  renderAll();
 }
 function deleteBranch(id){
   S.branches=S.branches.filter(b=>b.id!==id);
@@ -1530,7 +1669,7 @@ function deleteImage(id){S.images=S.images.filter(i=>i.id!==id);render();}
 function duplicateCard(id){
   const c=cardById(id);if(!c)return;
   const nc={...c,id:uid(),x:c.x+30,y:c.y+30,zoneIds:[]};
-  S.cards.push(nc);render();
+  S.cards.push(nc);renderAll();
 }
 
 // ═══════════════════════════════════════
@@ -1578,7 +1717,7 @@ function openCardEditor(id){
       </div>
     </div>
     <div class="fg"><label>幅 (px)</label><input type="number" id="ed-w" value="${card.w||150}" min="80" max="600" style="width:80px"></div>
-    <div class="fg"><label>解説</label><textarea id="ed-desc">${esc(card.desc)}</textarea></div>
+    <div class="fg"><label>解説</label><textarea id="ed-desc">${esc(card.desc)}</textarea>${layerChipsHtml()}</div>
     <div class="mact">
       <button class="btn btn-d" id="ed-del">🗑 削除</button>
       <button class="btn btn-s" id="ed-dup">複製</button>
@@ -1588,6 +1727,7 @@ function openCardEditor(id){
     </div>
   `,()=>{
     buildIconGrid('ed-icon-grid',card.icon,v=>document.getElementById('ed-cicon').value=v);
+    wireLayerChips('ed-desc');
     document.querySelectorAll('.color-preset').forEach(p=>{
       p.addEventListener('click',()=>{
         document.getElementById('ed-color').value=p.dataset.col;
@@ -1617,7 +1757,7 @@ function openCardEditor(id){
       card.icon=document.getElementById('ed-cicon').value||'✦';
       card.w=parseInt(document.getElementById('ed-w').value)||150;
       card.desc=document.getElementById('ed-desc').value;
-      hideModal();render();
+      hideModal();renderAll();
     };
     document.getElementById('ed-del').onclick=()=>{if(confirm('このカードを削除しますか?')){deleteCard(id);hideModal();}};
     document.getElementById('ed-dup').onclick=()=>{duplicateCard(id);hideModal();};
@@ -1922,7 +2062,7 @@ function onCanvasCtx(e){
     {icon:'➕',label:'カードを追加',action:()=>{
       S.cards.push({id:uid(),x:pt.x-75,y:pt.y-45,w:150,h:90,name:'新しいカード',sub:'',
         color:'#9b59b6',image:null,icon:'✦',shape:'rect',desc:'',textScale:1,zoneIds:[]});
-      render();
+      renderAll();
     }},
     {icon:'T',label:'サブタイトルを追加',action:()=>{
       S.subtitles.push({id:uid(),x:pt.x-80,y:pt.y-15,text:'サブタイトル',size:22,color:'#ffffff',borderColor:'#c8a8ff'});
@@ -1955,13 +2095,15 @@ wrap.addEventListener('wheel',e=>{
 },{passive:false});
 
 // Drop a 手がかり (clue) card from the sidebar onto the canvas → place it as a card
-wrap.addEventListener('dragover',e=>{ if(_dragClueId){e.preventDefault();try{e.dataTransfer.dropEffect='copy';}catch(_){}}});
+wrap.addEventListener('dragover',e=>{ if(_dragClueId||_dragCardMoveId){e.preventDefault();try{e.dataTransfer.dropEffect=_dragClueId?'copy':'move';}catch(_){}}});
 wrap.addEventListener('drop',e=>{
-  if(!_dragClueId)return;
-  e.preventDefault();
-  const pt=s2c(e.clientX,e.clientY);
-  placeClueOnCanvas(_dragClueId,pt.x,pt.y);
-  _dragClueId=null;
+  if(_dragClueId){
+    e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeClueOnCanvas(_dragClueId,pt.x,pt.y);_dragClueId=null;
+  } else if(_dragCardMoveId){
+    e.preventDefault();const c=cardById(_dragCardMoveId);
+    if(c){const pt=s2c(e.clientX,e.clientY);c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}
+    _dragCardMoveId=null;
+  }
 });
 
 // Pan on canvas mousedown (empty space)
@@ -2097,6 +2239,8 @@ function connectTouchStart(e,fromId){
 }
 function descTouchStart(e,id){
   if(e.touches.length!==1)return;
+  const tag=e.target.closest&&e.target.closest('.layer-tag');
+  if(tag){e.stopPropagation();e.preventDefault();switchLayer(tag.dataset.layer);return;} // tap tag → jump to layer
   e.stopPropagation();e.preventDefault();
   const owner=ownerByDescId(id);if(!owner)return;const kind=descKindOf(id);
   if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
@@ -2138,9 +2282,26 @@ function clueTouchStart(e,clueId){
   };
   window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
 }
+// カード一覧 touch: tap=focus, drag onto canvas=move
+function cardListTouchStart(e,cardId){
+  if(e.touches.length!==1)return;
+  e.stopPropagation();e.preventDefault();
+  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;let moved=false;
+  const tm=ev=>{if(ev.touches[0]){const cx=ev.touches[0].clientX,cy=ev.touches[0].clientY;if(!moved&&(Math.abs(cx-sx)>8||Math.abs(cy-sy)>8))moved=true;if(moved)ev.preventDefault();}};
+  const te=ev=>{
+    window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
+    if(moved){const ch=ev.changedTouches[0];const r=wrap.getBoundingClientRect();
+      if(ch&&ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom){
+        const c=cardById(cardId);if(c){const pt=s2c(ch.clientX,ch.clientY);c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}}}
+    else focusCard(cardId);
+  };
+  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
+}
 document.getElementById('q-list-right').addEventListener('touchstart',e=>{
   const it=e.target.closest&&e.target.closest('.clue-item');
-  if(it&&it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
+  if(!it)return;
+  if(it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
+  else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId);
 },{passive:false});
 
 // mobile: side panels (疑問/手がかり) show/hide
@@ -2229,7 +2390,7 @@ document.getElementById('bg-sel').onchange=function(){
 
 document.getElementById('btn-del-all').onclick=()=>{
   if(confirm('すべての要素を削除しますか？この操作は元に戻せません。')){
-    S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];render();
+    S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];S.layers=[];S.activeLayer='all';renderAll();
   }
 };
 
@@ -2244,6 +2405,7 @@ function saveFile(){
     questions:S.questions,
     clues:S.clues,
     showMain:S.showMain,
+    showCards:S.showCards,showLayers:S.showLayers,
     showQuestions:S.showQuestions,
     showClues:S.showClues,
     boards:S.boards,
@@ -2266,6 +2428,7 @@ function applyDocData(d){
   S.showDesc=d.showDesc!==false;
   S.clues=d.clues||[];
   S.showMain=d.showMain!==false;
+  S.showCards=d.showCards!==false; S.showLayers=d.showLayers!==false;
   S.showQuestions=d.showQuestions!==false;
   S.showClues=d.showClues!==false;
   if(d.boards){
@@ -2286,7 +2449,7 @@ function applyDocData(d){
 function currentDocData(){
   saveActiveBoard();
   return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,
-    questions:S.questions,clues:S.clues,showMain:S.showMain,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
+    questions:S.questions,clues:S.clues,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
 document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
