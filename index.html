@@ -6,7 +6,7 @@
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
-<title>相互関係ジェネレーター</title>
+<title>ClueBoard 推理の助手</title>
 <style>
 *{box-sizing:border-box;margin:0;padding:0}
 body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column;user-select:none}
@@ -299,14 +299,14 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
     </div>
   </div>
   <div id="boot-logo">
-    <div class="bl-main">相互関係ジェネレーター</div>
-    <div class="bl-sub">Relationship Mapper</div>
+    <div class="bl-main">ClueBoard</div>
+    <div class="bl-sub">推理の助手</div>
   </div>
   <div id="boot-skip">CLICK TO SKIP</div>
 </div>
 
 <div id="menubar">
-  <span id="app-title">◈ 相互関係ジェネレーター</span>
+  <span id="app-title">🔍 ClueBoard</span>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-undo" title="元に戻す (Ctrl+Z)" disabled>↶ 戻る</button>
   <button class="mbtn" id="btn-redo" title="やり直し (Ctrl+Y)" disabled>↷ 進む</button>
@@ -2237,7 +2237,7 @@ document.getElementById('btn-del-all').onclick=()=>{
 function saveFile(){
   saveActiveBoard();
   const data={
-    title:'相互関係ジェネレーター',
+    title:'ClueBoard',
     version:2,
     bg:S.bg,showDesc:S.showDesc,
     currentBoard:S.currentBoard,
@@ -2285,7 +2285,7 @@ function applyDocData(d){
 }
 function currentDocData(){
   saveActiveBoard();
-  return {title:'相互関係ジェネレーター',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,
+  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,
     questions:S.questions,clues:S.clues,showMain:S.showMain,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
