@@ -23,6 +23,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .mbtn:disabled:hover{background:#15152e;border-color:#3a3a6a}
 #bg-sel{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 8px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
 #bg-sel option{background:#1e1e4a}
+#btn-login.in{background:#1e4a2e;border-color:#3a9a5a}
+#cloud-status{font-size:11px;color:#8a8ac0;white-space:nowrap;align-self:center}
 
 /* ── CONTENT / SIDEBAR / CANVAS ── */
 #content{flex:1;display:flex;min-height:0;position:relative}
@@ -315,6 +317,10 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
   <button class="mbtn" id="btn-load">📂 読み込み</button>
   <input type="file" id="file-input" style="display:none" accept=".json">
   <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-login">👤 Googleでログイン</button>
+  <button class="mbtn" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
+  <span id="cloud-status"></span>
+  <div class="menu-sep"></div>
   <button class="mbtn danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
 
@@ -362,6 +368,11 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
 <div class="hint-bar" id="hint-conn">クリックで接続先を選択　Esc でキャンセル</div>
 <div class="hint-bar" id="hint-branch">⑂ 分岐モード：クリックで分岐ノードを配置　Esc でキャンセル</div>
 
+<!-- Firebase (Google login + cloud share). Loaded best-effort; app still works locally if unavailable. -->
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+
 <script>
 'use strict';
 
@@ -408,17 +419,18 @@ const hintBranch= document.getElementById('hint-branch');
 // ═══════════════════════════════════════
 //  UNDO / REDO HISTORY
 // ═══════════════════════════════════════
-let history=[], histIdx=-1, _commitTimer=null, _suppressCommit=false, _dirty=false;
+let history=[], histIdx=-1, _commitTimer=null, _suppressCommit=false, _dirty=false, _loadingDoc=false;
 const HIST_MAX=60;
 function docState(){
   return JSON.stringify({cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
     subtitles:S.subtitles,images:S.images,bg:S.bg,showDesc:S.showDesc});
 }
 function scheduleCommit(){
-  if(_suppressCommit)return;
+  if(_suppressCommit||_loadingDoc)return;
   _dirty=true;updateUndoUI();          // a change exists → undo becomes available immediately
   clearTimeout(_commitTimer);
   _commitTimer=setTimeout(commitNow,300); // coalesce rapid changes (slider drags etc.)
+  cloudSaveDebounced();                // sync to cloud when signed in
 }
 function commitNow(){
   clearTimeout(_commitTimer);
@@ -2225,40 +2237,133 @@ function saveFile(){
 }
 document.getElementById('btn-save').onclick=saveFile;
 
+// Apply a saved document object to the app state (shared by file-load and cloud-load)
+function applyDocData(d){
+  _loadingDoc=true;
+  S.bg=d.bg||'grid';
+  S.showDesc=d.showDesc!==false;
+  S.clues=d.clues||[];
+  S.showMain=d.showMain!==false;
+  S.showQuestions=d.showQuestions!==false;
+  S.showClues=d.showClues!==false;
+  if(d.boards){
+    S.boards=d.boards;
+    S.questions=d.questions||[];
+    S.currentBoard=(d.currentBoard&&d.boards[d.currentBoard])?d.currentBoard:'main';
+    if(!S.boards.main)S.boards.main={cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[]};
+  } else {
+    S.boards={main:{cards:d.cards||[],arrows:d.arrows||[],branches:d.branches||[],zones:d.zones||[],subtitles:d.subtitles||[],images:d.images||[]}};
+    S.questions=[]; S.currentBoard='main';
+  }
+  loadActiveBoard();
+  document.getElementById('bg-sel').value=S.bg;
+  document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
+  render();applyTf();renderSidebar();resetHistory();
+  _loadingDoc=false;
+}
+function currentDocData(){
+  saveActiveBoard();
+  return {title:'相互関係ジェネレーター',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,
+    questions:S.questions,clues:S.clues,showMain:S.showMain,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
+}
 // ── LOAD ──
 document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
 document.getElementById('file-input').onchange=e=>{
   const f=e.target.files[0];if(!f)return;
   const r=new FileReader();
-  r.onload=ev=>{
-    try{
-      const d=JSON.parse(ev.target.result);
-      S.bg=d.bg||'grid';
-      S.showDesc=d.showDesc!==false; // default ON unless the file explicitly turned it off
-      S.clues=d.clues||[];
-      S.showMain=d.showMain!==false;
-      S.showQuestions=d.showQuestions!==false;
-      S.showClues=d.showClues!==false;
-      if(d.boards){
-        S.boards=d.boards;
-        S.questions=d.questions||[];
-        S.currentBoard=(d.currentBoard&&d.boards[d.currentBoard])?d.currentBoard:'main';
-        if(!S.boards.main)S.boards.main={cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[]};
-      } else {
-        // legacy flat format → main board only
-        S.boards={main:{cards:d.cards||[],arrows:d.arrows||[],branches:d.branches||[],zones:d.zones||[],subtitles:d.subtitles||[],images:d.images||[]}};
-        S.questions=[]; S.currentBoard='main';
-      }
-      loadActiveBoard();
-      document.getElementById('bg-sel').value=S.bg;
-      document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
-      render();applyTf();renderSidebar();
-      resetHistory(); // loaded file becomes the new undo baseline
-    }catch(err){alert('読み込みエラー: '+err.message);}
-  };
+  r.onload=ev=>{ try{ applyDocData(JSON.parse(ev.target.result)); }catch(err){alert('読み込みエラー: '+err.message);} };
   r.readAsText(f);
   e.target.value='';
 };
+
+// ═══════════════════════════════════════
+//  CLOUD : Google login + cloud save + share (Firebase)
+// ═══════════════════════════════════════
+let fbAuth=null, fbDb=null, fbUser=null, cloudDocId=null, _cloudTimer=null;
+(function initFirebase(){
+  try{
+    if(!window.firebase||!firebase.initializeApp)return;
+    firebase.initializeApp({
+      apiKey:"AIzaSyCbdtD8zzSFMPooNwSVLLtXI1HXWqR7mNs",
+      authDomain:"rel-gen.firebaseapp.com",
+      projectId:"rel-gen",
+      storageBucket:"rel-gen.firebasestorage.app",
+      messagingSenderId:"767919033041",
+      appId:"1:767919033041:web:22951a8dfbbd4a196a53f0"
+    });
+    fbAuth=firebase.auth(); fbDb=firebase.firestore();
+    fbAuth.onAuthStateChanged(onAuthChanged);
+    // handle returning from a redirect sign-in (mobile)
+    fbAuth.getRedirectResult&&fbAuth.getRedirectResult().catch(()=>{});
+  }catch(e){ console.warn('Firebase init failed',e); }
+})();
+function cloudReady(){return !!(fbAuth&&fbDb);}
+function setCloudStatus(t){const s=document.getElementById('cloud-status');if(s)s.textContent=t||'';}
+function hashDocId(){return (location.hash.match(/doc=([\w-]+)/)||[])[1]||null;}
+function updateCloudUI(){
+  const lb=document.getElementById('btn-login'),sb=document.getElementById('btn-share');
+  if(!lb)return;
+  if(!cloudReady()){lb.textContent='👤 ログイン(未設定)';lb.disabled=true;if(sb)sb.disabled=true;return;}
+  if(fbUser){
+    const nm=(fbUser.displayName||'ユーザー').split(' ')[0];
+    lb.textContent='👤 '+nm+'（ログアウト）';lb.classList.add('in');lb.title='クリックでログアウト';
+    if(sb)sb.disabled=false;
+  } else {
+    lb.textContent='👤 Googleでログイン';lb.classList.remove('in');lb.title='';
+    if(sb)sb.disabled=true; setCloudStatus('');
+  }
+}
+function onAuthChanged(user){
+  fbUser=user||null; updateCloudUI();
+  if(user){
+    const h=hashDocId();
+    cloudDocId = h || user.uid;
+    cloudLoad(cloudDocId, !h); // own doc auto-created if missing; shared doc must exist
+  } else { cloudDocId=null; }
+}
+function cloudLogin(){
+  if(!cloudReady())return alert('Firebaseが読み込まれていません（オフライン/ファイル直開きでは利用できません）。公開URLで試してください。');
+  const p=new firebase.auth.GoogleAuthProvider();
+  fbAuth.signInWithPopup(p).catch(err=>{
+    if(err&&/popup|cancelled|disallowed/i.test((err.code||'')+(err.message||''))){ try{fbAuth.signInWithRedirect(p);}catch(_){ alert('ログイン失敗: '+(err.message||err)); } }
+    else alert('ログイン失敗: '+(err.message||err));
+  });
+}
+function cloudLoad(docId, createIfMissing){
+  if(!cloudReady())return;
+  setCloudStatus('☁ 読込中…');
+  fbDb.collection('docs').doc(docId).get().then(snap=>{
+    if(snap.exists && snap.data() && snap.data().data){ applyDocData(snap.data().data); setCloudStatus('☁ 読込完了'); }
+    else if(createIfMissing){ cloudSaveNow(); }   // first sign-in → push current work as your doc
+    else { setCloudStatus('⚠ 共有データが見つかりません'); }
+  }).catch(e=>{ setCloudStatus('☁ 読込失敗'); console.warn('cloudLoad',e); });
+}
+function cloudSaveNow(){
+  if(!cloudReady()||!fbUser||!cloudDocId)return;
+  setCloudStatus('☁ 保存中…');
+  const payload={ lastEditor:fbUser.uid, updatedAt:firebase.firestore.FieldValue.serverTimestamp(), data:currentDocData() };
+  if(cloudDocId===fbUser.uid)payload.owner=fbUser.uid;
+  fbDb.collection('docs').doc(cloudDocId).set(payload,{merge:true})
+    .then(()=>setCloudStatus('☁ 保存済み'))
+    .catch(e=>{setCloudStatus('☁ 保存失敗');console.warn('cloudSave',e);});
+}
+function cloudSaveDebounced(){
+  if(_loadingDoc||!cloudReady()||!fbUser||!cloudDocId)return;
+  clearTimeout(_cloudTimer); _cloudTimer=setTimeout(cloudSaveNow,2000);
+}
+function cloudShare(){
+  if(!fbUser||!cloudDocId){alert('共有するにはログインしてください');return;}
+  const url=location.origin+location.pathname+'#doc='+cloudDocId;
+  cloudSaveNow();
+  if(navigator.clipboard&&navigator.clipboard.writeText){
+    navigator.clipboard.writeText(url).then(()=>setCloudStatus('🔗 共有リンクをコピーしました'),()=>{});
+  }
+  prompt('この共有リンクを相手に渡してください（相手もGoogleログインで同じ図を編集できます）:', url);
+}
+document.getElementById('btn-login').onclick=()=>{ if(fbUser)fbAuth.signOut(); else cloudLogin(); };
+document.getElementById('btn-share').onclick=cloudShare;
+window.addEventListener('hashchange',()=>{ if(fbUser){ const h=hashDocId(); if(h&&h!==cloudDocId){ cloudDocId=h; cloudLoad(h,false);} } });
+updateCloudUI();
 
 // ═══════════════════════════════════════
 //  INIT
