@@ -408,7 +408,7 @@ const S = {
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
-  currentBoard:'main', questions:[], boards:{},
+  currentBoard:'main', questions:[], boards:{}, mainTitle:'メイン',
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[], activeLayer:'all',                                 // 時系列レイヤー (per board)
@@ -454,6 +454,29 @@ function scheduleCommit(){
   clearTimeout(_commitTimer);
   _commitTimer=setTimeout(commitNow,300); // coalesce rapid changes (slider drags etc.)
   cloudSaveDebounced();                // sync to cloud when signed in
+  autosaveLocalDebounced();            // always keep a local autosave (works without login)
+}
+// ── Auto-save to this browser (localStorage). Restores on next visit even without login. ──
+const LOCAL_KEY='clueboard_doc_v1';
+let _localTimer=null;
+function autosaveLocalNow(){
+  if(_loadingDoc)return;
+  try{
+    localStorage.setItem(LOCAL_KEY, JSON.stringify(currentDocData()));
+    if(!fbUser)setCloudStatus('💾 自動保存済み'); // when not using cloud, reassure the user locally
+  }catch(e){ console.warn('local autosave failed',e); }
+}
+function autosaveLocalDebounced(){
+  if(_loadingDoc)return;
+  clearTimeout(_localTimer); _localTimer=setTimeout(autosaveLocalNow,500);
+}
+function tryRestoreLocal(){
+  try{
+    const raw=localStorage.getItem(LOCAL_KEY);
+    if(!raw)return false;
+    applyDocData(JSON.parse(raw));   // applyDocData renders + resets history
+    return true;
+  }catch(e){ console.warn('local restore failed',e); return false; }
 }
 function commitNow(){
   clearTimeout(_commitTimer);
@@ -476,6 +499,7 @@ function applyState(snap){
   const bgSel=document.getElementById('bg-sel');if(bgSel)bgSel.value=S.bg;
   const db=document.getElementById('btn-toggle-desc');if(db)db.classList.toggle('active',S.showDesc);
   _suppressCommit=false;
+  autosaveLocalDebounced();cloudSaveDebounced(); // persist undo/redo results too
 }
 function undo(){
   commitNow();          // flush any pending change first
@@ -744,6 +768,7 @@ function makeClueItem(c){
   del.onclick=e=>{e.stopPropagation();if(confirm('この手がかりを削除しますか？'))deleteClue(c.id);};
   it.appendChild(th);it.appendChild(ti);it.appendChild(del);
   it.onclick=()=>openClueEditor(c.id);
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openClueEditor(c.id);}; // right-click → edit
   it.classList.add('q-drag-h');
   it.draggable=true;
   it.addEventListener('dragstart',ev=>{_dragClueId=c.id;try{ev.dataTransfer.effectAllowed='copy';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
@@ -784,6 +809,7 @@ function makeCardListItem(c){
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
   it.appendChild(th);it.appendChild(ti);
   it.onclick=()=>focusCard(c.id);
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openCardEditor(c.id);}; // right-click → edit
   it.classList.add('q-drag-h');it.draggable=true;
   it.addEventListener('dragstart',ev=>{_dragCardMoveId=c.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardMoveId=null;});
@@ -826,11 +852,32 @@ function buildQuestionSection(t){
     S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
   }
 }
+// The root board is no longer a special "メイン" home — it's just the first entry in the layer
+// list (renamable, like any layer). renameMain() edits its label.
+function renameMain(){
+  showModal(`<h2>名称を編集</h2><div class="fg"><input type="text" id="mn-name" value="${esc(S.mainTitle||'メイン')}"></div>
+    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="mn-ok">保存</button></div>`,()=>{
+    const inp=document.getElementById('mn-name');inp.focus();inp.select();
+    const ok=()=>{S.mainTitle=(inp.value||'').trim()||'メイン';hideModal();renderSidebar();autosaveLocalDebounced();cloudSaveDebounced();};
+    document.getElementById('mn-ok').onclick=ok; inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
+}
+function makeMainItem(){
+  const it=document.createElement('div');
+  it.className='q-item'+(S.currentBoard==='main'?' active':'');
+  const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color='#9aa3b2';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=S.mainTitle||'メイン';ti.title=S.mainTitle||'メイン';
+  it.appendChild(ico);it.appendChild(ti);
+  it.onclick=()=>switchBoard('main');
+  it.ondblclick=e=>{e.stopPropagation();renameMain();};
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameMain();};
+  return it;
+}
 function buildLayerSection(t,includeMain){
   t.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
   if(S.showLayers){
-    if(includeMain)t.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'})); // メイン merged into layers (mobile)
     t.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
+    if(includeMain)t.appendChild(makeMainItem()); // root board = the first entry (no special "main" concept)
     t.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
     S.layers.forEach(l=>t.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
   }
@@ -2422,6 +2469,7 @@ function saveFile(){
     version:2,
     bg:S.bg,showDesc:S.showDesc,
     currentBoard:S.currentBoard,
+    mainTitle:S.mainTitle,
     questions:S.questions,
     clues:S.clues,
     showMain:S.showMain,
@@ -2446,6 +2494,7 @@ function applyDocData(d){
   _loadingDoc=true;
   S.bg=d.bg||'grid';
   S.showDesc=d.showDesc!==false;
+  S.mainTitle=d.mainTitle||'メイン';
   S.clues=d.clues||[];
   S.showMain=d.showMain!==false;
   S.showCards=d.showCards!==false; S.showLayers=d.showLayers!==false;
@@ -2468,7 +2517,7 @@ function applyDocData(d){
 }
 function currentDocData(){
   saveActiveBoard();
-  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,
+  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,mainTitle:S.mainTitle,
     questions:S.questions,clues:S.clues,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
@@ -2592,24 +2641,27 @@ updateCloudUI();
 applyTf();
 render();
 
-// Demo data
-(function demo(){
-  const id1=uid(),id2=uid(),id3=uid();
-  S.cards.push(
-    {id:id1,x:200,y:200,w:150,name:'主人公',sub:'勇者',color:'#3498db',image:null,icon:'★',shape:'rect',desc:'物語の主人公。正義感が強い。',textScale:1,zoneIds:[]},
-    {id:id2,x:500,y:150,w:150,name:'ライバル',sub:'騎士団',color:'#e74c8b',image:null,icon:'⚔',shape:'rect',desc:'主人公のライバル。',textScale:1,zoneIds:[]},
-    {id:id3,x:500,y:350,w:150,name:'師匠',sub:'魔法使い',color:'#9b59b6',image:null,icon:'✦',shape:'circle',desc:'主人公を導く師匠。',textScale:1,zoneIds:[]}
-  );
-  S.arrows.push(
-    {id:uid(),from:id1,to:id2,name:'ライバル関係',icon:'⚡',color:'#ff6060',width:2,desc:'互いに高め合う関係',curve:0,dashed:false},
-    {id:uid(),from:id3,to:id1,name:'師弟',icon:'',color:'#c8a8ff',width:2,desc:'',curve:0,dashed:false}
-  );
-  S.zones.push({id:uid(),name:'勇者パーティ',color:'#3498db',cardIds:[id1,id3]});
-  S.subtitles.push({id:uid(),x:250,y:70,text:'キャラクター相関図',size:28,color:'#ffffff',border:3,borderColor:'#c8a8ff'});
-  render();
-})();
-renderSidebar();
-resetHistory(); // establish the initial undo baseline immediately
+// Restore the browser autosave if present; otherwise seed demo data (first visit).
+const _restored = tryRestoreLocal();
+if(!_restored){
+  (function demo(){
+    const id1=uid(),id2=uid(),id3=uid();
+    S.cards.push(
+      {id:id1,x:200,y:200,w:150,name:'主人公',sub:'勇者',color:'#3498db',image:null,icon:'★',shape:'rect',desc:'物語の主人公。正義感が強い。',textScale:1,zoneIds:[]},
+      {id:id2,x:500,y:150,w:150,name:'ライバル',sub:'騎士団',color:'#e74c8b',image:null,icon:'⚔',shape:'rect',desc:'主人公のライバル。',textScale:1,zoneIds:[]},
+      {id:id3,x:500,y:350,w:150,name:'師匠',sub:'魔法使い',color:'#9b59b6',image:null,icon:'✦',shape:'circle',desc:'主人公を導く師匠。',textScale:1,zoneIds:[]}
+    );
+    S.arrows.push(
+      {id:uid(),from:id1,to:id2,name:'ライバル関係',icon:'⚡',color:'#ff6060',width:2,desc:'互いに高め合う関係',curve:0,dashed:false},
+      {id:uid(),from:id3,to:id1,name:'師弟',icon:'',color:'#c8a8ff',width:2,desc:'',curve:0,dashed:false}
+    );
+    S.zones.push({id:uid(),name:'勇者パーティ',color:'#3498db',cardIds:[id1,id3]});
+    S.subtitles.push({id:uid(),x:250,y:70,text:'キャラクター相関図',size:28,color:'#ffffff',border:3,borderColor:'#c8a8ff'});
+    render();
+  })();
+  renderSidebar();
+  resetHistory(); // establish the initial undo baseline immediately
+}
 
 // ═══════════════════════════════════════
 //  BOOT SCREEN (GameCube-style intro)
