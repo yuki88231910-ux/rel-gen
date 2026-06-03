@@ -814,37 +814,56 @@ function wireLayerChips(taId){
     ta.focus();ta.selectionStart=ta.selectionEnd=s+tag.length;
   });
 }
+// ── sidebar section builders (target = the list element to append into) ──
+function buildMainSection(t){
+  t.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
+  if(S.showMain)t.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
+}
+function buildQuestionSection(t){
+  t.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
+  if(S.showQuestions){
+    t.appendChild(addItemEl('＋','疑問を追加',addQuestion));
+    S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+  }
+}
+function buildLayerSection(t,includeMain){
+  t.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
+  if(S.showLayers){
+    if(includeMain)t.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'})); // メイン merged into layers (mobile)
+    t.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
+    t.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
+    S.layers.forEach(l=>t.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
+  }
+}
+function buildClueSection(t){
+  t.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
+  if(S.showClues){
+    t.appendChild(addItemEl('＋','手がかりを追加',addClue));
+    S.clues.forEach(c=>t.appendChild(makeClueItem(c)));
+  }
+}
+function buildCardSection(t){
+  t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
+  if(S.showCards)S.cards.forEach(c=>t.appendChild(makeCardListItem(c)));
+}
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
   if(!L||!R)return;
   L.innerHTML='';R.innerHTML='';
-  // On mobile, everything lives in the single LEFT panel (right panel hidden).
   const mobile=window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
-  const RT = mobile ? L : R;
-  // ── LEFT: メイン ──
-  L.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
-  if(S.showMain)L.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
-  // ── LEFT: 疑問 ──
-  L.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
-  if(S.showQuestions){
-    L.appendChild(addItemEl('＋','疑問を追加',addQuestion));
-    S.questions.forEach(q=>L.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
-  }
-  // ── RIGHT(→left on mobile): 時系列レイヤー ──
-  RT.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
-  if(S.showLayers){
-    RT.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
-    RT.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
-    S.layers.forEach(l=>RT.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
-  }
-  // ── RIGHT(→left on mobile): カード一覧 ──
-  RT.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
-  if(S.showCards)S.cards.forEach(c=>RT.appendChild(makeCardListItem(c)));
-  // ── RIGHT(→left on mobile): 手がかり ──
-  RT.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
-  if(S.showClues){
-    RT.appendChild(addItemEl('＋','手がかりを追加',addClue));
-    S.clues.forEach(c=>RT.appendChild(makeClueItem(c)));
+  if(mobile){
+    // one left panel, order: レイヤー(メイン内包) → 疑問 → 手がかり → カード
+    buildLayerSection(L,true);
+    buildQuestionSection(L);
+    buildClueSection(L);
+    buildCardSection(L);
+  } else {
+    // desktop: left = メイン/疑問, right = レイヤー/カード/手がかり (unchanged)
+    buildMainSection(L);
+    buildQuestionSection(L);
+    buildLayerSection(R,false);
+    buildCardSection(R);
+    buildClueSection(R);
   }
 }
 let _dragClueId=null;
