@@ -203,14 +203,19 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
   #app-title{font-size:16px;padding:2px 2px 8px;border-bottom:1px solid #2a2a5a;width:100%}
   #menubar .mbtn,#menubar #bg-sel{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
   #cloud-status{padding:2px 4px}
-  /* side panels slide-in as overlays (hidden by default on mobile via body.sb-hidden) */
-  #sidebar,#sidebar-right{width:66vw;max-width:240px}
-  .q-item{padding:12px 12px;font-size:15px}
-  .q-add-item{min-height:44px}
-  .q-section{font-size:12px;padding:11px 12px 4px}
+  /* unify all panels into ONE compact, scrollable left drawer (hidden by default via body.sb-hidden) */
+  #sidebar-right{display:none}
+  #sidebar{width:54vw;max-width:200px;pointer-events:auto;overflow-y:auto;overscroll-behavior:contain;
+    -webkit-overflow-scrolling:touch;background:linear-gradient(180deg,rgba(15,15,36,.97),rgba(11,11,24,.97));
+    border-right:1px solid #2a2a5a;box-shadow:5px 0 20px rgba(0,0,0,.5)}
+  #q-list{pointer-events:auto;padding:8px 7px 24px}
+  .q-item{padding:8px 9px;font-size:12.5px;gap:6px;margin-bottom:5px;touch-action:pan-y}
+  .q-add-item{min-height:34px;font-size:16px}
+  .q-section{font-size:10.5px;padding:8px 9px 3px}
+  .clue-item .clue-thumb{width:22px;height:22px;font-size:13px}
+  .q-del{opacity:.8}  /* always show delete on touch (no hover) */
   .modal{width:94vw}
   .card-add-btn{width:32px;height:32px;font-size:18px;top:-14px;right:-14px}
-  .q-del{opacity:.8}  /* always show delete on touch (no hover) */
 }
 
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
@@ -813,6 +818,9 @@ function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
   if(!L||!R)return;
   L.innerHTML='';R.innerHTML='';
+  // On mobile, everything lives in the single LEFT panel (right panel hidden).
+  const mobile=window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
+  const RT = mobile ? L : R;
   // ── LEFT: メイン ──
   L.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
   if(S.showMain)L.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
@@ -822,21 +830,21 @@ function renderSidebar(){
     L.appendChild(addItemEl('＋','疑問を追加',addQuestion));
     S.questions.forEach(q=>L.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
   }
-  // ── RIGHT: 時系列レイヤー ──
-  R.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
+  // ── RIGHT(→left on mobile): 時系列レイヤー ──
+  RT.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
   if(S.showLayers){
-    R.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
-    R.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
-    S.layers.forEach(l=>R.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
+    RT.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
+    RT.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
+    S.layers.forEach(l=>RT.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
   }
-  // ── RIGHT: カード一覧 ──
-  R.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
-  if(S.showCards)S.cards.forEach(c=>R.appendChild(makeCardListItem(c)));
-  // ── RIGHT: 手がかり ──
-  R.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
+  // ── RIGHT(→left on mobile): カード一覧 ──
+  RT.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
+  if(S.showCards)S.cards.forEach(c=>RT.appendChild(makeCardListItem(c)));
+  // ── RIGHT(→left on mobile): 手がかり ──
+  RT.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
   if(S.showClues){
-    R.appendChild(addItemEl('＋','手がかりを追加',addClue));
-    S.clues.forEach(c=>R.appendChild(makeClueItem(c)));
+    RT.appendChild(addItemEl('＋','手がかりを追加',addClue));
+    S.clues.forEach(c=>RT.appendChild(makeClueItem(c)));
   }
 }
 let _dragClueId=null;
@@ -2268,41 +2276,35 @@ arrsG.addEventListener('touchstart',e=>{
   onArrowHitClick({clientX:ch.clientX,clientY:ch.clientY,stopPropagation(){},preventDefault(){}},hit.dataset.arrId);
 },{passive:false});
 
-// 手がかり (clue) touch: tap=edit, drag onto canvas=place
-function clueTouchStart(e,clueId){
+// list-item touch: vertical swipe = scroll the panel; horizontal drag = onto canvas; tap = the item's onclick
+// (no touchstart preventDefault → panel scroll & tap-click work)
+function listDragTouch(e,onDrop){
   if(e.touches.length!==1)return;
-  e.stopPropagation();e.preventDefault();
-  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;let moved=false;
-  const tm=ev=>{if(ev.touches[0]){const cx=ev.touches[0].clientX,cy=ev.touches[0].clientY;if(!moved&&(Math.abs(cx-sx)>8||Math.abs(cy-sy)>8))moved=true;if(moved)ev.preventDefault();}};
-  const te=ev=>{
-    window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
-    if(moved){const ch=ev.changedTouches[0];const r=wrap.getBoundingClientRect();
-      if(ch&&ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom){const pt=s2c(ch.clientX,ch.clientY);placeClueOnCanvas(clueId,pt.x,pt.y);}}
-    else openClueEditor(clueId);
+  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;let drag=false,decided=false;
+  const tm=ev=>{ if(!ev.touches[0])return;
+    const dx=ev.touches[0].clientX-sx,dy=ev.touches[0].clientY-sy;
+    if(!decided){ if(Math.abs(dy)>Math.abs(dx)&&Math.abs(dy)>6)decided=true; else if(Math.abs(dx)>8){decided=true;drag=true;} }
+    if(drag)ev.preventDefault();
+  };
+  const te=ev=>{ window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
+    if(drag){const ch=ev.changedTouches[0];const r=wrap.getBoundingClientRect();
+      if(ch&&ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom)onDrop(s2c(ch.clientX,ch.clientY));}
   };
   window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
 }
-// カード一覧 touch: tap=focus, drag onto canvas=move
-function cardListTouchStart(e,cardId){
-  if(e.touches.length!==1)return;
-  e.stopPropagation();e.preventDefault();
-  const t=e.touches[0];const sx=t.clientX,sy=t.clientY;let moved=false;
-  const tm=ev=>{if(ev.touches[0]){const cx=ev.touches[0].clientX,cy=ev.touches[0].clientY;if(!moved&&(Math.abs(cx-sx)>8||Math.abs(cy-sy)>8))moved=true;if(moved)ev.preventDefault();}};
-  const te=ev=>{
-    window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);
-    if(moved){const ch=ev.changedTouches[0];const r=wrap.getBoundingClientRect();
-      if(ch&&ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom){
-        const c=cardById(cardId);if(c){const pt=s2c(ch.clientX,ch.clientY);c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}}}
-    else focusCard(cardId);
-  };
-  window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
-}
-document.getElementById('q-list-right').addEventListener('touchstart',e=>{
+function clueTouchStart(e,clueId){ listDragTouch(e,pt=>placeClueOnCanvas(clueId,pt.x,pt.y)); } // tap → onclick (edit)
+function cardListTouchStart(e,cardId){ listDragTouch(e,pt=>{const c=cardById(cardId);if(c){c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}}); } // tap → onclick (focus)
+function sidebarTouchDelegate(e){
   const it=e.target.closest&&e.target.closest('.clue-item');
   if(!it)return;
   if(it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
   else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId);
-},{passive:false});
+}
+document.getElementById('q-list-right').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
+document.getElementById('q-list').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
+// relocate sidebar sections (left-only on mobile / split on desktop) when the viewport crosses the breakpoint
+let _rzTimer=null;
+window.addEventListener('resize',()=>{clearTimeout(_rzTimer);_rzTimer=setTimeout(renderSidebar,150);});
 
 // mobile: side panels (疑問/手がかり) show/hide
 document.getElementById('mobile-sb-toggle').onclick=()=>document.body.classList.toggle('sb-hidden');
