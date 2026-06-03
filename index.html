@@ -30,7 +30,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 #canvas-inner{position:absolute;top:0;left:0;transform-origin:0 0}
 /* sidebar = floating HUD over the canvas; only the cards capture clicks, the empty area is click-through */
 #sidebar{position:absolute;left:0;top:0;bottom:0;width:236px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
-#q-list{padding:10px 8px;pointer-events:none;overflow:visible}
+#sidebar-right{position:absolute;right:0;top:0;bottom:0;width:236px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
+#q-list,#q-list-right{padding:10px 8px;pointer-events:none;overflow:visible}
 .q-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:6px;border-radius:8px;background:#16162e;border:1px solid #2a2a5a;cursor:pointer;color:#d0d0ff;font-size:13px;transition:background .15s,border-color .15s;pointer-events:auto;box-shadow:0 2px 10px rgba(0,0,0,.4)}
 .q-item:hover{background:#1e1e44;border-color:#4a4a8a}
 .q-item.active{background:#2a1e55;border-color:#9a6aff;color:#fff}
@@ -299,6 +300,9 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 <aside id="sidebar">
   <div id="q-list"></div>
 </aside>
+<aside id="sidebar-right">
+  <div id="q-list-right"></div>
+</aside>
 <div id="canvas-wrap">
   <div id="canvas-inner">
     <svg id="svg-layer" xmlns="http://www.w3.org/2000/svg">
@@ -351,7 +355,7 @@ const S = {
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
   currentBoard:'main', questions:[], boards:{},
-  clues:[], showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
+  clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 
@@ -650,18 +654,24 @@ function makeClueItem(c){
   return it;
 }
 function renderSidebar(){
-  const list=document.getElementById('q-list');if(!list)return;
-  list.innerHTML='';
-  // main board
-  list.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
-  // ── 疑問 section ──
-  list.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
-  list.appendChild(addItemEl('＋','疑問を追加',addQuestion));
-  if(S.showQuestions)S.questions.forEach(q=>list.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
-  // ── 手がかり section ──
-  list.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
-  list.appendChild(addItemEl('＋','手がかりを追加',addClue));
-  if(S.showClues)S.clues.forEach(c=>list.appendChild(makeClueItem(c)));
+  const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
+  if(!L||!R)return;
+  L.innerHTML='';R.innerHTML='';
+  // ── LEFT: メイン ──
+  L.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
+  if(S.showMain)L.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
+  // ── LEFT: 疑問 ── (hiding the section also hides its + button)
+  L.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
+  if(S.showQuestions){
+    L.appendChild(addItemEl('＋','疑問を追加',addQuestion));
+    S.questions.forEach(q=>L.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+  }
+  // ── RIGHT: 手がかり ──
+  R.appendChild(sectionRow('手がかり',S.showClues,()=>{S.showClues=!S.showClues;renderSidebar();}));
+  if(S.showClues){
+    R.appendChild(addItemEl('＋','手がかりを追加',addClue));
+    S.clues.forEach(c=>R.appendChild(makeClueItem(c)));
+  }
 }
 let _dragClueId=null;
 function addClue(){
@@ -2033,6 +2043,7 @@ function saveFile(){
     currentBoard:S.currentBoard,
     questions:S.questions,
     clues:S.clues,
+    showMain:S.showMain,
     showQuestions:S.showQuestions,
     showClues:S.showClues,
     boards:S.boards,
@@ -2059,6 +2070,7 @@ document.getElementById('file-input').onchange=e=>{
       S.bg=d.bg||'grid';
       S.showDesc=d.showDesc!==false; // default ON unless the file explicitly turned it off
       S.clues=d.clues||[];
+      S.showMain=d.showMain!==false;
       S.showQuestions=d.showQuestions!==false;
       S.showClues=d.showClues!==false;
       if(d.boards){
