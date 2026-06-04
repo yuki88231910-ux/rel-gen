@@ -421,7 +421,7 @@ const S = {
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
-  currentBoard:'main', questions:[], boards:{},
+  currentBoard:'main', questions:[], boards:{}, cardOrder:[],
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
@@ -810,7 +810,39 @@ function makeBoardItem(en){
 }
 let _dragQId=null;
 function clearDropMarks(){
-  document.querySelectorAll('#q-list .q-over-top,#q-list .q-over-bottom').forEach(el=>el.classList.remove('q-over-top','q-over-bottom'));
+  document.querySelectorAll('.q-over-top,.q-over-bottom').forEach(el=>el.classList.remove('q-over-top','q-over-bottom'));
+}
+// generic drag-to-reorder for any sidebar list item (type isolates each list; moveFn(dragId,targetId,after) reorders)
+let _reorder=null;
+function wireReorder(it, type, id, moveFn){
+  it.classList.add('q-drag-h'); it.draggable=true;
+  it.addEventListener('dragstart',e=>{ _reorder={type,id}; try{e.dataTransfer.effectAllowed='copyMove';}catch(_){ } it.classList.add('q-dragging'); });
+  it.addEventListener('dragend',()=>{ it.classList.remove('q-dragging'); clearDropMarks(); _reorder=null; });
+  it.addEventListener('dragover',e=>{ if(!_reorder||_reorder.type!==type||_reorder.id===id)return; e.preventDefault(); try{e.dataTransfer.dropEffect='move';}catch(_){ } const r=it.getBoundingClientRect(); const after=e.clientY>r.top+r.height/2; clearDropMarks(); it.classList.add(after?'q-over-bottom':'q-over-top'); });
+  it.addEventListener('drop',e=>{ if(!_reorder||_reorder.type!==type||_reorder.id===id)return; e.preventDefault(); e.stopPropagation(); const r=it.getBoundingClientRect(); const after=e.clientY>r.top+r.height/2; const dragId=_reorder.id; _reorder=null; moveFn(dragId,id,after); });
+}
+function moveLayer(fromId,targetId,after){
+  const from=S.layers.findIndex(l=>l.id===fromId);if(from<0)return;
+  const [item]=S.layers.splice(from,1);
+  let ti=S.layers.findIndex(l=>l.id===targetId);
+  if(ti<0)S.layers.push(item); else S.layers.splice(after?ti+1:ti,0,item);
+  renderSidebar();scheduleCommit();
+}
+function moveClue(fromId,targetId,after){
+  const from=S.clues.findIndex(c=>c.id===fromId);if(from<0)return;
+  const [item]=S.clues.splice(from,1);
+  let ti=S.clues.findIndex(c=>c.id===targetId);
+  if(ti<0)S.clues.push(item); else S.clues.splice(after?ti+1:ti,0,item);
+  renderSidebar();scheduleCommit();
+}
+function moveCard(fromKey,targetKey,after){ // cards are unique-by-name → reorder by their display key
+  const keys=cardEntries().map(e=>e.key);
+  const from=keys.indexOf(fromKey);if(from<0)return;
+  keys.splice(from,1);
+  let ti=keys.indexOf(targetKey);
+  if(ti<0)keys.push(fromKey); else keys.splice(after?ti+1:ti,0,fromKey);
+  S.cardOrder=keys;
+  renderSidebar();scheduleCommit();
 }
 function moveQuestion(draggedId,targetId,after){
   const from=S.questions.findIndex(q=>q.id===draggedId);if(from<0)return;
@@ -843,8 +875,9 @@ function makeClueItem(c){
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openClueEditor(c.id);}; // right-click → edit
   it.classList.add('q-drag-h');
   it.draggable=true;
-  it.addEventListener('dragstart',ev=>{_dragClueId=c.id;try{ev.dataTransfer.effectAllowed='copy';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+  it.addEventListener('dragstart',ev=>{_dragClueId=c.id;try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragClueId=null;});
+  wireReorder(it,'clue',c.id,moveClue); // drop on canvas → place card; drop on another 手がかり → reorder
   return it;
 }
 let _dragCardSrc=null; // {card, fromBoard} while dragging a card from the sidebar list
@@ -862,6 +895,7 @@ function makeLayerItem(l){ // l: {id, name, color} — each layer is its own can
   it.ondblclick=e=>{e.stopPropagation();renameLayer(l.id);};
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameLayer(l.id);};
   it.onclick=()=>switchLayer(l.id);
+  wireReorder(it,'layer',l.id,moveLayer); // drag to reorder layers
   return it;
 }
 function focusCard(id){
@@ -889,6 +923,7 @@ function makeCardListItem(c, boardId){
   it.classList.add('q-drag-h');it.draggable=true;
   it.addEventListener('dragstart',ev=>{_dragCardSrc={card:c,fromBoard};try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardSrc=null;});
+  wireReorder(it,'card',(c.name||'').trim()||(' '+c.id),moveCard); // drop on canvas → place; drop on another card → reorder list
   return it;
 }
 // Place a card onto the current layer's canvas. Same layer → just move it; other layer → reuse the
@@ -971,23 +1006,26 @@ function buildClueSection(t){
     S.clues.forEach(c=>t.appendChild(makeClueItem(c)));
   }
 }
-function buildCardSection(t){
-  t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
-  if(!S.showCards)return;
-  // ONE shared list of UNIQUE cards: a card placed on several layers shows once (the list never grows).
+// the UNIQUE card list (shared across layers, 手がかり-cards excluded), ordered by S.cardOrder
+function cardEntries(){
   saveActiveBoard(); // sync the live current canvas into S.boards first
   const boardIds=S.layers.map(l=>l.id);
   if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
-  // 手がかり由来のカードはカード一覧に出さない（手がかりセクションが持つ）。
-  // fromClue印が無い既存カードも、手がかりと同名なら除外する。
-  const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean));
-  const uniq=new Map(); // name → {card, boardId}; prefer the current layer's instance
+  const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean)); // 手がかり由来/同名は除外
+  const uniq=new Map();
   boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
     bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
-      const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
-      if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{card:c,boardId:bid}); });
+      const key=(c.name||'').trim()||(' '+c.id);
+      if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{key,card:c,boardId:bid}); });
   });
-  uniq.forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
+  const entries=[...uniq.values()], order=S.cardOrder||[];
+  entries.sort((a,b)=>{ let ia=order.indexOf(a.key), ib=order.indexOf(b.key); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
+  return entries;
+}
+function buildCardSection(t){
+  t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
+  if(!S.showCards)return;
+  cardEntries().forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
@@ -2631,6 +2669,7 @@ function saveFile(){
     layers:S.layers,
     questions:S.questions,
     clues:S.clues,
+    cardOrder:S.cardOrder,
     showMain:S.showMain,
     showCards:S.showCards,showLayers:S.showLayers,
     showQuestions:S.showQuestions,
@@ -2654,6 +2693,7 @@ function applyDocData(d){
   S.bg=d.bg||'grid';
   S.showDesc=d.showDesc!==false;
   S.clues=d.clues||[];
+  S.cardOrder=d.cardOrder||[];
   S.showMain=d.showMain!==false;
   S.showCards=d.showCards!==false; S.showLayers=d.showLayers!==false;
   S.showQuestions=d.showQuestions!==false;
@@ -2680,7 +2720,7 @@ function applyDocData(d){
 function currentDocData(){
   saveActiveBoard();
   return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,layers:S.layers,
-    questions:S.questions,clues:S.clues,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
+    questions:S.questions,clues:S.clues,cardOrder:S.cardOrder,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
 document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
