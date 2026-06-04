@@ -921,9 +921,12 @@ function buildCardSection(t){
   saveActiveBoard(); // sync the live current canvas into S.boards first
   const boardIds=S.layers.map(l=>l.id);
   if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
+  // 手がかり由来のカードはカード一覧に出さない（手がかりセクションが持つ）。
+  // fromClue印が無い既存カードも、手がかりと同名なら除外する。
+  const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean));
   const uniq=new Map(); // name → {card, boardId}; prefer the current layer's instance
   boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(c.fromClue)return; // 手がかり由来のカードはカード一覧に出さない（手がかりセクションが持つ）
+    bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
       const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
       if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{card:c,boardId:bid}); });
   });
