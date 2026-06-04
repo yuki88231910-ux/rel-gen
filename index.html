@@ -185,16 +185,16 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 ::-webkit-scrollbar-thumb{background:#2a2a5a;border-radius:3px}
 
 /* floating buttons (mobile only) + slide-in drawer pieces */
-#mobile-sb-toggle{display:none;position:fixed;left:8px;bottom:10px;z-index:400;width:46px;height:46px;border-radius:50%;background:#2a1e55;border:1px solid #9a6aff;color:#fff;font-size:20px;align-items:center;justify-content:center;box-shadow:0 3px 12px rgba(0,0,0,.5);cursor:pointer}
+/* two toggle buttons sit next to each other at the top-left, same style */
 #mobile-menu-toggle{display:none;position:fixed;top:8px;left:8px;z-index:520;width:46px;height:46px;border-radius:12px;background:#1a1a3e;border:1px solid #6a6aaa;color:#fff;font-size:22px;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,.55);cursor:pointer}
+#mobile-sb-toggle{display:none;position:fixed;top:8px;left:62px;z-index:520;width:46px;height:46px;border-radius:12px;background:#2a1e55;border:1px solid #9a6aff;color:#fff;font-size:22px;align-items:center;justify-content:center;box-shadow:0 2px 12px rgba(0,0,0,.55);cursor:pointer}
 #menu-backdrop{display:none;position:fixed;inset:0;background:rgba(0,0,0,.45);z-index:505}
-body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
 
 /* ══ MOBILE (portrait, ≤760px ONLY — desktop unchanged) ══ */
 @media (max-width:760px){
   #mobile-menu-toggle{display:flex}
-  #mobile-sb-toggle{display:flex;left:auto;right:10px}
-  body.menu-open #menu-backdrop{display:block}
+  #mobile-sb-toggle{display:flex}
+  body.menu-open #menu-backdrop,body.sb-open #menu-backdrop{display:block}
   /* menubar becomes a left slide-in drawer */
   #menubar{
     position:fixed;top:0;left:0;bottom:0;width:82vw;max-width:300px;height:auto;
@@ -206,11 +206,14 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
   #app-title{font-size:16px;padding:2px 2px 8px;border-bottom:1px solid #2a2a5a;width:100%}
   #menubar .mbtn,#menubar #bg-sel{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
   #cloud-status{padding:2px 4px}
-  /* unify all panels into ONE compact, scrollable left drawer (hidden by default via body.sb-hidden) */
+  /* sidebar uses the SAME slide-in drawer UI as the menu (same width / style / animation) */
   #sidebar-right{display:none}
-  #sidebar{width:54vw;max-width:200px;pointer-events:auto;overflow-y:auto;overscroll-behavior:contain;
-    -webkit-overflow-scrolling:touch;background:linear-gradient(180deg,rgba(15,15,36,.97),rgba(11,11,24,.97));
-    border-right:1px solid #2a2a5a;box-shadow:5px 0 20px rgba(0,0,0,.5)}
+  #sidebar{position:fixed;top:0;left:0;bottom:0;width:82vw;max-width:300px;height:auto;z-index:510;
+    padding:58px 8px 20px;overflow-y:auto;overscroll-behavior:contain;-webkit-overflow-scrolling:touch;pointer-events:auto;
+    background:linear-gradient(180deg,rgba(15,15,36,.97),rgba(11,11,24,.97));
+    border-right:2px solid #2a2a5a;box-shadow:6px 0 26px rgba(0,0,0,.55);
+    transform:translateX(-100%);transition:transform .25s ease}
+  body.sb-open #sidebar{transform:translateX(0)}
   #q-list{pointer-events:auto;padding:8px 7px 24px}
   .q-item{padding:8px 9px;font-size:12.5px;gap:6px;margin-bottom:5px;touch-action:pan-y}
   .q-add-item{min-height:34px;font-size:16px}
@@ -219,6 +222,10 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
   .q-del{opacity:.8}  /* always show delete on touch (no hover) */
   .modal{width:94vw}
   .card-add-btn{width:32px;height:32px;font-size:18px;top:-14px;right:-14px}
+  /* bigger default canvas text on mobile for readability (subtitles keep their own size) */
+  .alabel{font-size:24px;padding:6px 14px;border-radius:18px}
+  .branch-label{font-size:22px}
+  .branch{font-size:32px}
 }
 
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
@@ -980,6 +987,8 @@ function applyTf(){
   updateBgTransform();
 }
 function esc(s){return(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;')}
+const isMobileView=()=>!!(window.matchMedia&&window.matchMedia('(max-width:760px)').matches);
+const txtMul=()=>isMobileView()?2:1;   // mobile: default canvas text is doubled for readability (subtitles excluded)
 function svgE(tag,a){
   const e=document.createElementNS('http://www.w3.org/2000/svg',tag);
   for(const[k,v]of Object.entries(a))e.setAttribute(k,v);
@@ -1264,12 +1273,12 @@ function updateCardEl(el,card){
     img.style.display='none';iw.style.display='block';
     if(img._src){img._src=null;img.removeAttribute('src');}
     iw.textContent=card.icon||'✦';
-    iw.style.fontSize=(22*(card.textScale||1))+'px';
+    iw.style.fontSize=(22*(card.textScale||1)*txtMul())+'px';
   }
   const nm=el.querySelector('.card-name');nm.textContent=card.name||'';
-  nm.style.fontSize=(13*(card.textScale||1))+'px';
+  nm.style.fontSize=(13*(card.textScale||1)*txtMul())+'px';
   const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
-  sb.style.fontSize=(11*(card.textScale||1))+'px';
+  sb.style.fontSize=(11*(card.textScale||1)*txtMul())+'px';
   setKeyBadge(el,card.key);
   // connect target highlight
   el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==card.id);
@@ -1425,6 +1434,29 @@ function descHtml(text, ownerName){
   }
   return out+esc(text.slice(last));
 }
+function rectsOverlap(a,b,m){m=m||0;return a.x<b.x+b.w+m && a.x+a.w+m>b.x && a.y<b.y+b.h+m && a.y+a.h+m>b.y;}
+function ownerRectOf(owner,kind){
+  if(kind==='card')return{x:owner.x,y:owner.y,w:cardEffW(owner),h:cardEffH(owner)};
+  if(kind==='branch')return{x:owner.x,y:owner.y,w:40,h:40};
+  if(kind==='image')return{x:owner.x,y:owner.y,w:owner.w,h:owner.h};
+  const m=arrowMid(owner)||{x:0,y:0};return{x:m.x-20,y:m.y-10,w:40,h:20};
+}
+// choose a desc-box offset that doesn't overlap nearby elements; keep the default spot when it's already clear
+function pickDescOff(anchor, ownerRect, defOff, bw, bh, obstacles){
+  const fits=(ox,oy)=>{const r={x:anchor.x+ox,y:anchor.y+oy,w:bw,h:bh};for(const o of obstacles){if(rectsOverlap(r,o,4))return false;}return true;};
+  if(fits(defOff.x,defOff.y))return defOff;
+  const ownerHalf=Math.max(ownerRect.w,ownerRect.h)/2, gap=12, bHalf=Math.max(bw,bh)/2;
+  const dirs=[[1,0],[0,1],[1,1],[-1,1],[1,-1],[0,-1],[-1,0],[-1,-1]];
+  for(let ring=0;ring<6;ring++){
+    const r=ownerHalf+gap+bHalf+ring*34;
+    for(const d of dirs){
+      const len=Math.hypot(d[0],d[1])||1, cx=anchor.x+d[0]/len*r, cy=anchor.y+d[1]/len*r;
+      const ox=cx-bw/2-anchor.x, oy=cy-bh/2-anchor.y;
+      if(fits(ox,oy))return{x:ox,y:oy};
+    }
+  }
+  return defOff; // nothing clear → fall back to the default spot
+}
 function renderDescs(){
   const want=[];
   if(S.showDesc){
@@ -1437,14 +1469,16 @@ function renderDescs(){
   elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
   const lex=new Map();
   descLinesG.querySelectorAll('[data-desc-id]').forEach(l=>lex.set(l.dataset.descId,l));
+  // obstacles for auto-placement (descs avoid these); placed desc boxes are added as we go so they don't overlap each other
+  const obstacles=[];
+  S.cards.forEach(c=>obstacles.push({x:c.x,y:c.y,w:cardEffW(c),h:cardEffH(c)}));
+  S.branches.forEach(b=>obstacles.push({x:b.x,y:b.y,w:40,h:40}));
+  S.images.forEach(im=>obstacles.push({x:im.x,y:im.y,w:im.w,h:im.h}));
+  S.arrows.forEach(a=>{const m=arrowMid(a);if(m)obstacles.push({x:m.x-36,y:m.y-14,w:72,h:28});}); // arrow label area
 
   want.forEach(w=>{
     const a=descAnchor(w.owner,w.kind);
     if(!a)return;
-    if(!w.owner.descOff)w.owner.descOff=defaultDescOff(w.owner,w.kind);
-    const off=w.owner.descOff;
-    const bx=a.x+off.x, by=a.y+off.y;
-    // box
     let box=ex.get(w.id);
     if(!box){
       box=document.createElement('div');box.className='desc-box';box.dataset.descId=w.id;
@@ -1454,13 +1488,18 @@ function renderDescs(){
       elems.appendChild(box);
     } else ex.delete(w.id);
     box.innerHTML=descHtml(w.owner.desc, w.kind==='card'?w.owner.name:''); // [[layer]] → jump-link to that layer's canvas (focus same-named card)
+    box.style.fontSize=(11*(w.owner.descScale||1)*txtMul())+'px';
+    const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
+    // respect a desc the user has dragged; otherwise auto-place it to avoid overlapping cards/arrows/other descs
+    const off=(w.owner.descMoved&&w.owner.descOff) ? w.owner.descOff
+            : pickDescOff(a, ownerRectOf(w.owner,w.kind), defaultDescOff(w.owner,w.kind), bw, bh, obstacles);
+    const bx=a.x+off.x, by=a.y+off.y;
     box.style.left=bx+'px';box.style.top=by+'px';
-    box.style.fontSize=(11*(w.owner.descScale||1))+'px';
+    obstacles.push({x:bx,y:by,w:bw,h:bh}); // subsequent descs avoid this box
     // dotted leader line, clipped to the box edge
     let line=lex.get(w.id);
     if(!line){line=svgE('line',{'data-desc-id':w.id,stroke:'rgba(175,160,255,.6)','stroke-width':1.4,'stroke-dasharray':'5,4'});descLinesG.appendChild(line);}
     else lex.delete(w.id);
-    const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
     const bcx=bx+bw/2, bcy=by+bh/2;
     const ep=rectEdgePt(bcx,bcy,bw/2+2,bh/2+2,a.x,a.y);
     line.setAttribute('x1',a.x);line.setAttribute('y1',a.y);
@@ -1474,13 +1513,16 @@ function onDescMousedown(e,id,kind){
   if(e.target.classList&&e.target.classList.contains('layer-tag')){e.stopPropagation();return;} // let the tag click switch layers
   e.stopPropagation();e.preventDefault();
   const owner=ownerByDescId(id);if(!owner)return;
-  if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
-  const off0={x:owner.descOff.x,y:owner.descOff.y};
-  const start=s2c(e.clientX,e.clientY);
   const box=elems.querySelector(`.desc-box[data-desc-id="${id}"]`);
+  const a=descAnchor(owner,kind)||{x:0,y:0};
+  // start the drag from wherever the box is currently shown (auto-placed or previously moved)
+  const off0=(owner.descMoved&&owner.descOff)?{x:owner.descOff.x,y:owner.descOff.y}
+            :{x:(parseFloat(box&&box.style.left)||a.x)-a.x, y:(parseFloat(box&&box.style.top)||a.y)-a.y};
+  const start=s2c(e.clientX,e.clientY);
   if(box)box.classList.add('dragging');
   const onMove=ev=>{
     const cp=s2c(ev.clientX,ev.clientY);
+    owner.descMoved=true; // user positioned it → stop auto-placing this desc
     owner.descOff={x:clampW(off0.x+(cp.x-start.x)),y:clampW(off0.y+(cp.y-start.y))};
     renderDescs();
   };
@@ -2315,9 +2357,12 @@ function descTouchStart(e,id){
   if(tag){e.stopPropagation();e.preventDefault();jumpToLayer(tag.dataset.layer,tag.dataset.card);return;} // tap tag → jump to that layer's canvas
   e.stopPropagation();e.preventDefault();
   const owner=ownerByDescId(id);if(!owner)return;const kind=descKindOf(id);
-  if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
-  const off0={x:owner.descOff.x,y:owner.descOff.y};const start=s2c(e.touches[0].clientX,e.touches[0].clientY);
-  const tm=ev=>{if(ev.touches[0]){ev.preventDefault();const cp=s2c(ev.touches[0].clientX,ev.touches[0].clientY);owner.descOff={x:clampW(off0.x+(cp.x-start.x)),y:clampW(off0.y+(cp.y-start.y))};renderDescs();}};
+  const dbox=elems.querySelector(`.desc-box[data-desc-id="${id}"]`);
+  const a=descAnchor(owner,kind)||{x:0,y:0};
+  const off0=(owner.descMoved&&owner.descOff)?{x:owner.descOff.x,y:owner.descOff.y}
+            :{x:(parseFloat(dbox&&dbox.style.left)||a.x)-a.x, y:(parseFloat(dbox&&dbox.style.top)||a.y)-a.y};
+  const start=s2c(e.touches[0].clientX,e.touches[0].clientY);
+  const tm=ev=>{if(ev.touches[0]){ev.preventDefault();const cp=s2c(ev.touches[0].clientX,ev.touches[0].clientY);owner.descMoved=true;owner.descOff={x:clampW(off0.x+(cp.x-start.x)),y:clampW(off0.y+(cp.y-start.y))};renderDescs();}};
   const te=()=>{window.removeEventListener('touchmove',tm);window.removeEventListener('touchend',te);scheduleCommit();};
   window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
 }
@@ -2370,17 +2415,21 @@ document.getElementById('q-list').addEventListener('touchstart',sidebarTouchDele
 let _rzTimer=null;
 window.addEventListener('resize',()=>{clearTimeout(_rzTimer);_rzTimer=setTimeout(renderSidebar,150);});
 
-// mobile: side panels (疑問/手がかり) show/hide
-document.getElementById('mobile-sb-toggle').onclick=()=>document.body.classList.toggle('sb-hidden');
+// mobile: sidebar drawer (slide-in from left, same UI as the menu) — opening one closes the other
+document.getElementById('mobile-sb-toggle').onclick=()=>{document.body.classList.remove('menu-open');document.body.classList.toggle('sb-open');};
 // mobile: menu drawer (slide-in from left)
-document.getElementById('mobile-menu-toggle').onclick=()=>document.body.classList.toggle('menu-open');
-document.getElementById('menu-backdrop').onclick=()=>document.body.classList.remove('menu-open');
-// tapping an action button closes the drawer
+document.getElementById('mobile-menu-toggle').onclick=()=>{document.body.classList.remove('sb-open');document.body.classList.toggle('menu-open');};
+document.getElementById('menu-backdrop').onclick=()=>document.body.classList.remove('menu-open','sb-open');
+// tapping an action button closes the menu drawer
 document.getElementById('menubar').addEventListener('click',e=>{
   if(e.target.closest('.mbtn'))document.body.classList.remove('menu-open');
 });
-// on phones, hide the side panels by default for a clean portrait canvas
-if(window.matchMedia&&window.matchMedia('(max-width:760px)').matches)document.body.classList.add('sb-hidden');
+// tapping a navigation item (card/layer/clue/疑問) closes the sidebar drawer so the canvas is visible
+document.getElementById('sidebar').addEventListener('click',e=>{
+  if(!isMobileView())return;
+  const it=e.target.closest('.q-item');
+  if(it && !it.classList.contains('q-add-item'))document.body.classList.remove('sb-open');
+});
 
 // Keyboard
 document.addEventListener('keydown',e=>{
