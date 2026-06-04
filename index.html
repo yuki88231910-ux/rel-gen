@@ -788,7 +788,7 @@ function makeClueItem(c){
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragClueId=null;});
   return it;
 }
-let _dragCardMoveId=null;
+let _dragCardSrc=null; // {card, fromBoard} while dragging a card from the sidebar list
 function makeLayerItem(l){ // l: {id, name, color} — each layer is its own canvas (board)
   const it=document.createElement('div');it.className='q-item'+(S.currentBoard===l.id?' active':'');
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color=l.color||'#9aa3b2';
@@ -826,15 +826,34 @@ function makeCardListItem(c, meta, showDot){
     const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-left:auto';
     dot.style.background=meta.color||'#9aa3b2';dot.title=meta.name;it.appendChild(dot);
   }
-  const go=()=>{ if(meta&&meta.id!==S.currentBoard)switchBoard(meta.id); focusCard(c.id); };
-  it.onclick=go;
-  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(meta&&meta.id!==S.currentBoard)switchBoard(meta.id); openCardEditor(c.id);}; // right-click → edit
-  if(onCurrent){ // drag-to-canvas reposition only for cards on the current canvas
-    it.classList.add('q-drag-h');it.draggable=true;
-    it.addEventListener('dragstart',ev=>{_dragCardMoveId=c.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
-    it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardMoveId=null;});
-  }
+  it.dataset.cardBoard = meta?meta.id:S.currentBoard;   // which layer this card lives on (for touch drag)
+  // click never jumps layers: focus only when the card is on the current canvas
+  it.onclick=()=>{ if(onCurrent)focusCard(c.id); };
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(onCurrent)openCardEditor(c.id);}; // edit only the current canvas's card
+  // drag onto canvas: same-layer card → reposition; other-layer card → place the SAME card on this layer
+  it.classList.add('q-drag-h');it.draggable=true;
+  it.addEventListener('dragstart',ev=>{_dragCardSrc={card:c,fromBoard:meta?meta.id:S.currentBoard};try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+  it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardSrc=null;});
   return it;
+}
+// Place a card onto the current layer's canvas. Same layer → just move it; other layer → reuse the
+// same-named card here, or create a linked copy (same identity) so it's "the same card" across layers.
+function placeCardOnCanvas(srcCard, fromBoard, x, y){
+  if(!srcCard)return;
+  let tgt, created=false;
+  if(fromBoard===S.currentBoard){ tgt=srcCard; }
+  else {
+    tgt=S.cards.find(c=>(c.name||'').trim()===(srcCard.name||'').trim() && (srcCard.name||'').trim()!=='');
+    if(!tgt){
+      tgt={id:uid(),x:0,y:0,w:srcCard.w||150,name:srcCard.name,sub:srcCard.sub||'',color:srcCard.color,
+        image:srcCard.image||null,icon:srcCard.icon,shape:srcCard.shape||'rect',desc:'',textScale:srcCard.textScale||1,
+        key:srcCard.key||false,zoneIds:[]};
+      S.cards.push(tgt); created=true;
+    }
+  }
+  tgt.x=clampW(x-cardEffW(tgt)/2); tgt.y=clampW(y-cardEffH(tgt)/2);
+  S.selection=[tgt.id];
+  if(created)renderAll(); else { render(); scheduleCommit(); }
 }
 function promptAddLayer(){
   showModal(`<h2>レイヤー（別の図）を追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
@@ -2209,14 +2228,13 @@ wrap.addEventListener('wheel',e=>{
 },{passive:false});
 
 // Drop a 手がかり (clue) card from the sidebar onto the canvas → place it as a card
-wrap.addEventListener('dragover',e=>{ if(_dragClueId||_dragCardMoveId){e.preventDefault();try{e.dataTransfer.dropEffect=_dragClueId?'copy':'move';}catch(_){}}});
+wrap.addEventListener('dragover',e=>{ if(_dragClueId||_dragCardSrc){e.preventDefault();try{e.dataTransfer.dropEffect=_dragClueId?'copy':'move';}catch(_){}}});
 wrap.addEventListener('drop',e=>{
   if(_dragClueId){
     e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeClueOnCanvas(_dragClueId,pt.x,pt.y);_dragClueId=null;
-  } else if(_dragCardMoveId){
-    e.preventDefault();const c=cardById(_dragCardMoveId);
-    if(c){const pt=s2c(e.clientX,e.clientY);c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}
-    _dragCardMoveId=null;
+  } else if(_dragCardSrc){
+    e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeCardOnCanvas(_dragCardSrc.card,_dragCardSrc.fromBoard,pt.x,pt.y);
+    _dragCardSrc=null;
   }
 });
 
@@ -2402,12 +2420,17 @@ function listDragTouch(e,onDrop){
   window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
 }
 function clueTouchStart(e,clueId){ listDragTouch(e,pt=>placeClueOnCanvas(clueId,pt.x,pt.y)); } // tap → onclick (edit)
-function cardListTouchStart(e,cardId){ listDragTouch(e,pt=>{const c=cardById(cardId);if(c){c.x=clampW(pt.x-cardEffW(c)/2);c.y=clampW(pt.y-cardEffH(c)/2);S.selection=[c.id];render();}}); } // tap → onclick (focus)
+function cardListTouchStart(e,cardId,fromBoard){ // drag a card onto the canvas (cross-layer = place the same card here); tap → onclick
+  const src = fromBoard===S.currentBoard ? cardById(cardId)
+            : ((S.boards[fromBoard]&&S.boards[fromBoard].cards||[]).find(c=>c.id===cardId));
+  if(!src)return;
+  listDragTouch(e,pt=>placeCardOnCanvas(src,fromBoard,pt.x,pt.y));
+}
 function sidebarTouchDelegate(e){
   const it=e.target.closest&&e.target.closest('.clue-item');
   if(!it)return;
   if(it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
-  else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId);
+  else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId,it.dataset.cardBoard);
 }
 document.getElementById('q-list-right').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
 document.getElementById('q-list').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
