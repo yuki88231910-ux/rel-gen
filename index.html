@@ -636,9 +636,11 @@ function setCardKey(card, value){
 function collectKeyCards(){
   saveActiveBoard();
   const map=new Map();
+  const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean)); // 手がかりは疑問・伏線バーに出さない
   const boardIds=S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)); // layers + 疑問 diagrams
   boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(!c.key)return; const k=(c.name||'').trim()||(' '+c.id);
+    bd.cards.forEach(c=>{ if(!c.key)return; if(c.fromClue||clueNames.has((c.name||'').trim()))return; // skip 手がかり-derived keys
+      const k=(c.name||'').trim()||(' '+c.id);
       if(!map.has(k))map.set(k,{name:c.name||'(無名)',boards:[]});
       if(!map.get(k).boards.includes(bid))map.get(k).boards.push(bid); });
   });
