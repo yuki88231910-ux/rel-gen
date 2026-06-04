@@ -814,25 +814,21 @@ function focusCard(id){
   applyTf();render();
 }
 // meta = {id,name,color} of the layer/board this card lives on (cards are shared across layers in the sidebar).
-function makeCardListItem(c, meta, showDot){
-  const onCurrent = !meta || meta.id===S.currentBoard;
-  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;
+function makeCardListItem(c, boardId){
+  const fromBoard=boardId||S.currentBoard;
+  const onCurrent=fromBoard===S.currentBoard;
+  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;it.dataset.cardBoard=fromBoard;
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=(c.name||'')+(meta&&!onCurrent?'（'+meta.name+'）':'');
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
   it.appendChild(th);it.appendChild(ti);
-  if(meta&&showDot){ // small dot showing which layer the card belongs to (only when there are multiple layers)
-    const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-left:auto';
-    dot.style.background=meta.color||'#9aa3b2';dot.title=meta.name;it.appendChild(dot);
-  }
-  it.dataset.cardBoard = meta?meta.id:S.currentBoard;   // which layer this card lives on (for touch drag)
   // click never jumps layers: focus only when the card is on the current canvas
   it.onclick=()=>{ if(onCurrent)focusCard(c.id); };
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(onCurrent)openCardEditor(c.id);}; // edit only the current canvas's card
   // drag onto canvas: same-layer card → reposition; other-layer card → place the SAME card on this layer
   it.classList.add('q-drag-h');it.draggable=true;
-  it.addEventListener('dragstart',ev=>{_dragCardSrc={card:c,fromBoard:meta?meta.id:S.currentBoard};try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+  it.addEventListener('dragstart',ev=>{_dragCardSrc={card:c,fromBoard};try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
   it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardSrc=null;});
   return it;
 }
@@ -906,15 +902,16 @@ function buildClueSection(t){
 function buildCardSection(t){
   t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
   if(!S.showCards)return;
-  // Cards are shared across layers in the sidebar: list every layer's cards (not just the current one).
+  // ONE shared list of UNIQUE cards: a card placed on several layers shows once (the list never grows).
   saveActiveBoard(); // sync the live current canvas into S.boards first
-  const metas=S.layers.map(l=>({id:l.id,name:l.name,color:l.color}));
-  if(!metas.some(m=>m.id===S.currentBoard)){ // current board is a 疑問 (not a layer) → still show its cards
-    const q=S.questions.find(q=>q.id===S.currentBoard);
-    metas.push({id:S.currentBoard,name:q?q.title:'現在の図',color:'#9aa3b2'});
-  }
-  const showDot=metas.length>1;
-  metas.forEach(m=>{ const bd=S.boards[m.id]; if(bd&&bd.cards)bd.cards.forEach(c=>t.appendChild(makeCardListItem(c,m,showDot))); });
+  const boardIds=S.layers.map(l=>l.id);
+  if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
+  const uniq=new Map(); // name → {card, boardId}; prefer the current layer's instance
+  boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
+    bd.cards.forEach(c=>{ const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
+      if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{card:c,boardId:bid}); });
+  });
+  uniq.forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
@@ -1442,13 +1439,11 @@ function descHtml(text, ownerName){
     out+=esc(text.slice(last,m.index));
     const name=m[1].trim(), ly=S.layers.find(l=>l.name===name);
     if(ly){
-      // a layer tag becomes a jump-link only when the SAME card (by name) exists on that layer's canvas
-      const tb=S.boards[ly.id];
-      const jump = !!(ownerName && tb && tb.cards && tb.cards.some(c=>(c.name||'').trim()===(ownerName||'').trim()));
-      out += jump
-        ? `<span class="layer-tag" data-layer="${ly.id}" data-card="${esc(ownerName)}" style="color:${ly.color}">${esc(name)}</span>`
-        : `<span style="color:${ly.color};font-weight:bold">${esc(name)}</span>`; // styled, but no same-name card → not a jump
-    } else out+=esc(m[0]);
+      // a recognised layer tag is always a clickable jump to that layer's canvas
+      // (on jump, the same-named card is focused if it exists there)
+      const cardAttr = ownerName? ` data-card="${esc(ownerName)}"`:'';
+      out += `<span class="layer-tag" data-layer="${ly.id}"${cardAttr} style="color:${ly.color}">${esc(name)}</span>`;
+    } else out+=esc(m[0]); // unknown layer name → plain text
     last=m.index+m[0].length;
   }
   return out+esc(text.slice(last));
