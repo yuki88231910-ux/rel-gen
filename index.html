@@ -632,26 +632,29 @@ function setCardKey(card, value){
   }
   render();renderSidebar();scheduleCommit();
 }
-// gather key cards across all layers, unique by name, recording which layers each appears on
+// gather key cards across all layers AND 疑問 boards, unique by name, recording which boards each appears on
 function collectKeyCards(){
   saveActiveBoard();
   const map=new Map();
-  S.layers.forEach(ly=>{ const bd=S.boards[ly.id]; if(!bd||!bd.cards)return;
+  const boardIds=S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)); // layers + 疑問 diagrams
+  boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
     bd.cards.forEach(c=>{ if(!c.key)return; const k=(c.name||'').trim()||(' '+c.id);
-      if(!map.has(k))map.set(k,{name:c.name||'(無名)',layers:[]});
-      map.get(k).layers.push(ly.id); });
+      if(!map.has(k))map.set(k,{name:c.name||'(無名)',boards:[]});
+      if(!map.get(k).boards.includes(bid))map.get(k).boards.push(bid); });
   });
   return [...map.values()];
 }
-function jumpToKey(name, layerId){
-  if(S.currentBoard!==layerId)switchBoard(layerId);
+function boardLabelOf(bid){ const ly=S.layers.find(l=>l.id===bid); if(ly)return ly.name; const q=S.questions.find(q=>q.id===bid); if(q)return q.title; return bid; }
+function boardIconOf(bid){ return S.layers.some(l=>l.id===bid)?'●':'❓'; } // ● layer / ❓ 疑問
+function jumpToKey(name, boardId){
+  if(S.currentBoard!==boardId)switchBoard(boardId);
   const c=S.cards.find(x=>(x.name||'').trim()===(name||'').trim());
   if(c)focusCard(c.id);
 }
-function chooseKeyLayer(name, layerIds){ // when a key spans multiple layers, ask which one to jump to
-  const opts=layerIds.map(id=>{const ly=layerById(id);return `<button type="button" class="btn btn-s key-layer-opt" data-id="${id}" style="display:block;width:100%;text-align:left;margin:5px 0">● ${esc(ly?ly.name:id)}</button>`;}).join('');
-  showModal(`<h2>🔑 ${esc(name)}</h2><div class="fg" style="color:#cfcfe6;font-size:13px">どのレイヤーへ移動しますか？</div><div class="fg">${opts}</div><div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
-    document.querySelectorAll('.key-layer-opt').forEach(b=>b.onclick=()=>{const id=b.dataset.id;hideModal();jumpToKey(name,id);});
+function chooseKeyBoard(name, boardIds){ // when a key spans multiple layers / 疑問, ask which one to jump to
+  const opts=boardIds.map(id=>`<button type="button" class="btn btn-s key-board-opt" data-id="${esc(id)}" style="display:block;width:100%;text-align:left;margin:5px 0">${boardIconOf(id)} ${esc(boardLabelOf(id))}</button>`).join('');
+  showModal(`<h2>🔑 ${esc(name)}</h2><div class="fg" style="color:#cfcfe6;font-size:13px">どこへ移動しますか？</div><div class="fg">${opts}</div><div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelectorAll('.key-board-opt').forEach(b=>b.onclick=()=>{const id=b.dataset.id;hideModal();jumpToKey(name,id);});
   });
 }
 function makeKeyItem(k){
@@ -659,8 +662,8 @@ function makeKeyItem(k){
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent='🔑';ico.style.color='#f5c518';
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=k.name;ti.title=k.name+'（キー）';
   it.appendChild(ico);it.appendChild(ti);
-  if(k.layers.length>1){const c=document.createElement('span');c.style.cssText='margin-left:auto;font-size:11px;font-weight:bold;color:#f5c518;opacity:.9;flex:0 0 auto';c.textContent='×'+k.layers.length;c.title=k.layers.length+'個のレイヤーにあります';it.appendChild(c);}
-  it.onclick=()=>{ k.layers.length>1 ? chooseKeyLayer(k.name,k.layers) : jumpToKey(k.name,k.layers[0]); };
+  if(k.boards.length>1){const c=document.createElement('span');c.style.cssText='margin-left:auto;font-size:11px;font-weight:bold;color:#f5c518;opacity:.9;flex:0 0 auto';c.textContent='×'+k.boards.length;c.title=k.boards.length+'箇所（レイヤー/疑問）にあります';it.appendChild(c);}
+  it.onclick=()=>{ k.boards.length>1 ? chooseKeyBoard(k.name,k.boards) : jumpToKey(k.name,k.boards[0]); };
   return it;
 }
 
