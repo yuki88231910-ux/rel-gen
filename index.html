@@ -615,8 +615,49 @@ function setKeyBadge(el,hasKey){
   else if(kb)kb.remove();
 }
 // context-menu item to toggle the key marker on any object
-function keyMenuItem(obj){
-  return {icon:'🔑',label:obj.key?'キーを外す':'キーを設定',action:()=>{obj.key=!obj.key;render();}};
+function keyMenuItem(obj, isCard){
+  return {icon:'🔑',label:obj.key?'キーを外す':'キーを設定',action:()=>{
+    if(isCard) setCardKey(obj,!obj.key);          // cards: a key belongs to the entity → shared across layers
+    else { obj.key=!obj.key; render(); scheduleCommit(); }
+  }};
+}
+// a card's key is a property of the entity, so mirror it to every same-named card on every layer/board
+function setCardKey(card, value){
+  card.key=value;
+  const nm=(card.name||'').trim();
+  if(nm){ saveActiveBoard(); Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if((c.name||'').trim()===nm)c.key=value; })); }
+  render();renderSidebar();scheduleCommit();
+}
+// gather key cards across all layers, unique by name, recording which layers each appears on
+function collectKeyCards(){
+  saveActiveBoard();
+  const map=new Map();
+  S.layers.forEach(ly=>{ const bd=S.boards[ly.id]; if(!bd||!bd.cards)return;
+    bd.cards.forEach(c=>{ if(!c.key)return; const k=(c.name||'').trim()||(' '+c.id);
+      if(!map.has(k))map.set(k,{name:c.name||'(無名)',layers:[]});
+      map.get(k).layers.push(ly.id); });
+  });
+  return [...map.values()];
+}
+function jumpToKey(name, layerId){
+  if(S.currentBoard!==layerId)switchBoard(layerId);
+  const c=S.cards.find(x=>(x.name||'').trim()===(name||'').trim());
+  if(c)focusCard(c.id);
+}
+function chooseKeyLayer(name, layerIds){ // when a key spans multiple layers, ask which one to jump to
+  const opts=layerIds.map(id=>{const ly=layerById(id);return `<button type="button" class="btn btn-s key-layer-opt" data-id="${id}" style="display:block;width:100%;text-align:left;margin:5px 0">● ${esc(ly?ly.name:id)}</button>`;}).join('');
+  showModal(`<h2>🔑 ${esc(name)}</h2><div class="fg" style="color:#cfcfe6;font-size:13px">どのレイヤーへ移動しますか？</div><div class="fg">${opts}</div><div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelectorAll('.key-layer-opt').forEach(b=>b.onclick=()=>{const id=b.dataset.id;hideModal();jumpToKey(name,id);});
+  });
+}
+function makeKeyItem(k){
+  const it=document.createElement('div');it.className='q-item';
+  const ico=document.createElement('span');ico.className='q-ico';ico.textContent='🔑';ico.style.color='#f5c518';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=k.name;ti.title=k.name+'（キー）';
+  it.appendChild(ico);it.appendChild(ti);
+  if(k.layers.length>1){const c=document.createElement('span');c.style.cssText='margin-left:auto;font-size:11px;font-weight:bold;color:#f5c518;opacity:.9;flex:0 0 auto';c.textContent='×'+k.layers.length;c.title=k.layers.length+'個のレイヤーにあります';it.appendChild(c);}
+  it.onclick=()=>{ k.layers.length>1 ? chooseKeyLayer(k.name,k.layers) : jumpToKey(k.name,k.layers[0]); };
+  return it;
 }
 
 // ═══════════════════════════════════════
@@ -905,6 +946,7 @@ function buildQuestionSection(t){
   if(S.showQuestions){
     t.appendChild(addItemEl('＋','疑問・伏線を追加',addQuestion));
     S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+    collectKeyCards().forEach(k=>t.appendChild(makeKeyItem(k))); // 🔑 key cards across layers → click to jump
   }
 }
 function buildLayerSection(t){
@@ -2172,7 +2214,7 @@ function onCardCtx(e,id){
     {slider:true,label:'文字サイズ',min:.5,max:3,step:.05,value:card.textScale||1,oninput:v=>{card.textScale=v;render();}},
     {icon:'↩',label:'サイズをリセット',action:()=>{card.scale=1;card.textScale=1;render();}},
     'sep',
-    keyMenuItem(card),
+    keyMenuItem(card,true),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteCard(id)}
   ]));
 }
