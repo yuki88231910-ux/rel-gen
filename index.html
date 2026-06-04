@@ -93,6 +93,9 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 .layer-tag{font-weight:bold;cursor:pointer;pointer-events:auto;text-decoration:underline;text-underline-offset:2px}
 .layer-tag:hover{filter:brightness(1.25)}
 .card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
+.card.link-node{outline:2px dashed rgba(255,255,255,.55);outline-offset:2px}
+.link-badge{position:absolute;bottom:-11px;right:-11px;width:25px;height:25px;background:#f0a02a;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:bold;color:#1a1208;z-index:21;border:2px solid #0d0d1a;box-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1}
+.card.link-node .link-badge{display:flex}
 .card-add-btn:hover{background:#2277cc}
 /* "key" marker badge shown on flagged objects */
 .key-badge{position:absolute;top:-18px;left:-18px;width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#16162e;border:2.5px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 11px rgba(245,197,24,.45);line-height:1}
@@ -843,13 +846,25 @@ function placeCardOnCanvas(srcCard, fromBoard, x, y){
     if(!tgt){
       tgt={id:uid(),x:0,y:0,w:srcCard.w||150,name:srcCard.name,sub:srcCard.sub||'',color:srcCard.color,
         image:srcCard.image||null,icon:srcCard.icon,shape:srcCard.shape||'rect',desc:'',textScale:srcCard.textScale||1,
-        key:srcCard.key||false,zoneIds:[]};
+        key:srcCard.key||false,zoneIds:[],linkBoard:srcCard.linkBoard};
       S.cards.push(tgt); created=true;
     }
   }
   tgt.x=clampW(x-cardEffW(tgt)/2); tgt.y=clampW(y-cardEffH(tgt)/2);
   S.selection=[tgt.id];
   if(created)renderAll(); else { render(); scheduleCommit(); }
+}
+// Drop a 疑問 onto the canvas → a "link node" card that opens that question's diagram
+function placeQuestionOnCanvas(qid,x,y){
+  const q=S.questions.find(q=>q.id===qid); if(!q)return;
+  const w=170;
+  const card={id:uid(),x:clampW(x-w/2),y:clampW(y-44),w,name:q.title||'疑問',sub:'',color:'#e0901e',
+    image:null,icon:'❓',shape:'rect',desc:'',textScale:1,key:false,zoneIds:[],linkBoard:qid};
+  S.cards.push(card);S.selection=[card.id];renderAll();
+}
+function openLinkBoard(boardId){
+  if(boardId&&S.boards[boardId])switchBoard(boardId);
+  else alert('リンク先の疑問が見つかりません（削除された可能性があります）。');
 }
 function promptAddLayer(){
   showModal(`<h2>レイヤー（別の図）を追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
@@ -908,7 +923,7 @@ function buildCardSection(t){
   if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
   const uniq=new Map(); // name → {card, boardId}; prefer the current layer's instance
   boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
+    bd.cards.forEach(c=>{ const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
       if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{card:c,boardId:bid}); });
   });
   uniq.forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
@@ -1249,6 +1264,11 @@ function createCardEl(card){
   ab.className='card-add-btn';ab.textContent='+';ab.title='ドラッグで矢印を接続';
   ab.addEventListener('mousedown',e=>beginConnectDrag(card.id,e));
   el.appendChild(ab);
+  // link badge (only shown for question link-nodes) → opens the linked 疑問's diagram
+  const lb=document.createElement('div');lb.className='link-badge';lb.textContent='↗';lb.title='この疑問の図を開く';
+  lb.addEventListener('mousedown',e=>{e.stopPropagation();});
+  lb.addEventListener('click',e=>{e.stopPropagation();const c=cardById(card.id);if(c&&c.linkBoard)openLinkBoard(c.linkBoard);});
+  el.appendChild(lb);
   // icon/img
   const iw=document.createElement('div');iw.className='card-icon-wrap';el.appendChild(iw);
   const img=document.createElement('img');img.className='card-img';img.draggable=false;el.appendChild(img);
@@ -1291,6 +1311,7 @@ function updateCardEl(el,card){
     iw.textContent=card.icon||'✦';
     iw.style.fontSize=(22*(card.textScale||1)*txtMul())+'px';
   }
+  el.classList.toggle('link-node',!!card.linkBoard); // 疑問へのリンクノードなら破線＋↗バッジ
   const nm=el.querySelector('.card-name');nm.textContent=card.name||'';
   nm.style.fontSize=(13*(card.textScale||1)*txtMul())+'px';
   const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
@@ -2130,7 +2151,9 @@ function hideCtx(){ctxMenu.style.display='none';}
 
 function onCardCtx(e,id){
   const card=cardById(id);if(!card)return;
-  showCtx(e.clientX,e.clientY,[
+  const items=[];
+  if(card.linkBoard)items.push({icon:'↗',label:'この疑問を開く',action:()=>openLinkBoard(card.linkBoard)},'sep');
+  showCtx(e.clientX,e.clientY,items.concat([
     {icon:'✏️',label:'編集',action:()=>openCardEditor(id)},
     {icon:'📋',label:'複製',action:()=>duplicateCard(id)},
     'sep',
@@ -2140,7 +2163,7 @@ function onCardCtx(e,id){
     'sep',
     keyMenuItem(card),
     {icon:'🗑',label:'削除',danger:true,action:()=>deleteCard(id)}
-  ]);
+  ]));
 }
 function onBranchCtx(e,id){
   const br=branchById(id);if(!br)return;
@@ -2223,13 +2246,15 @@ wrap.addEventListener('wheel',e=>{
 },{passive:false});
 
 // Drop a 手がかり (clue) card from the sidebar onto the canvas → place it as a card
-wrap.addEventListener('dragover',e=>{ if(_dragClueId||_dragCardSrc){e.preventDefault();try{e.dataTransfer.dropEffect=_dragClueId?'copy':'move';}catch(_){}}});
+wrap.addEventListener('dragover',e=>{ if(_dragClueId||_dragCardSrc||_dragQId){e.preventDefault();try{e.dataTransfer.dropEffect='copy';}catch(_){}}});
 wrap.addEventListener('drop',e=>{
   if(_dragClueId){
     e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeClueOnCanvas(_dragClueId,pt.x,pt.y);_dragClueId=null;
   } else if(_dragCardSrc){
     e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeCardOnCanvas(_dragCardSrc.card,_dragCardSrc.fromBoard,pt.x,pt.y);
     _dragCardSrc=null;
+  } else if(_dragQId){
+    e.preventDefault();const pt=s2c(e.clientX,e.clientY);placeQuestionOnCanvas(_dragQId,pt.x,pt.y);_dragQId=null;
   }
 });
 
@@ -2384,6 +2409,8 @@ elems.addEventListener('touchstart',e=>{
   const t=e.target;
   const addBtn=t.closest&&t.closest('.card-add-btn');
   if(addBtn){const host=addBtn.closest('.card,.branch');if(host)connectTouchStart(e,host.dataset.id);return;}
+  const lb=t.closest&&t.closest('.link-badge');
+  if(lb){e.stopPropagation();e.preventDefault();const host=lb.closest('.card');const c=host&&cardById(host.dataset.id);if(c&&c.linkBoard)openLinkBoard(c.linkBoard);return;}
   const descBox=t.closest&&t.closest('.desc-box');
   if(descBox){descTouchStart(e,descBox.dataset.descId);return;}
   const el=t.closest&&t.closest('.card,.branch,.subtitle,.imgel');
@@ -2415,6 +2442,7 @@ function listDragTouch(e,onDrop){
   window.addEventListener('touchmove',tm,{passive:false});window.addEventListener('touchend',te);
 }
 function clueTouchStart(e,clueId){ listDragTouch(e,pt=>placeClueOnCanvas(clueId,pt.x,pt.y)); } // tap → onclick (edit)
+function questionTouchStart(e,qid){ listDragTouch(e,pt=>placeQuestionOnCanvas(qid,pt.x,pt.y)); } // drag → link node; tap → onclick (open board)
 function cardListTouchStart(e,cardId,fromBoard){ // drag a card onto the canvas (cross-layer = place the same card here); tap → onclick
   const src = fromBoard===S.currentBoard ? cardById(cardId)
             : ((S.boards[fromBoard]&&S.boards[fromBoard].cards||[]).find(c=>c.id===cardId));
@@ -2422,10 +2450,11 @@ function cardListTouchStart(e,cardId,fromBoard){ // drag a card onto the canvas 
   listDragTouch(e,pt=>placeCardOnCanvas(src,fromBoard,pt.x,pt.y));
 }
 function sidebarTouchDelegate(e){
-  const it=e.target.closest&&e.target.closest('.clue-item');
+  const it=e.target.closest&&e.target.closest('.clue-item,.q-item[data-qid]');
   if(!it)return;
   if(it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
   else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId,it.dataset.cardBoard);
+  else if(it.dataset.qid)questionTouchStart(e,it.dataset.qid);
 }
 document.getElementById('q-list-right').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
 document.getElementById('q-list').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
