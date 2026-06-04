@@ -408,10 +408,10 @@ const S = {
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
-  currentBoard:'main', questions:[], boards:{}, mainTitle:'メイン',
+  currentBoard:'main', questions:[], boards:{},
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
-  layers:[], activeLayer:'all',                                 // 時系列レイヤー (per board)
+  layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 const LAYER_COLORS=['#ff6b6b','#4dabf7','#51cf66','#ffd43b','#cc5de8','#ff922b','#20c997','#f06595'];
@@ -605,8 +605,7 @@ function keyMenuItem(obj){
 // ═══════════════════════════════════════
 function boardData(){
   return {cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
-    subtitles:S.subtitles,images:S.images,panX:S.panX,panY:S.panY,zoom:S.zoom,
-    layers:S.layers,activeLayer:S.activeLayer};
+    subtitles:S.subtitles,images:S.images,panX:S.panX,panY:S.panY,zoom:S.zoom};
 }
 function saveActiveBoard(){ S.boards[S.currentBoard]=boardData(); }
 function loadActiveBoard(){
@@ -614,32 +613,28 @@ function loadActiveBoard(){
   S.cards=b.cards||[];S.arrows=b.arrows||[];S.branches=b.branches||[];S.zones=b.zones||[];
   S.subtitles=b.subtitles||[];S.images=b.images||[];
   S.panX=b.panX==null?60:b.panX; S.panY=b.panY==null?60:b.panY; S.zoom=b.zoom||1;
-  S.layers=b.layers||[]; S.activeLayer=b.activeLayer||'all';
   S.selection=[];
 }
-// ── 時系列レイヤー ──
-// An element belongs to the layers named by [[layer]] tags in its description.
-// No tag → "base": always visible. View shows: activeLayer==='all' → everything; else base + that layer's elements.
-function elementLayerIds(obj){
-  if(!obj||!obj.desc)return [];
-  const ids=[]; const re=/\[\[([^\]]+)\]\]/g; let m;
-  while((m=re.exec(obj.desc))){ const ly=S.layers.find(l=>l.name===m[1].trim()); if(ly&&!ids.includes(ly.id))ids.push(ly.id); }
-  return ids;
+// ── 時系列レイヤー = それぞれ独立した図(キャンバス) ──
+// 各レイヤーは S.boards 内の1ボード。レイヤー1の id は 'main'。S.layers は順序付きの一覧。
+const BLANK_BOARD=()=>({cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[],panX:60,panY:60,zoom:1});
+function ensureLayers(mainName){
+  if(!Array.isArray(S.layers))S.layers=[];
+  if(!S.layers.some(l=>l.id==='main'))
+    S.layers.unshift({id:'main',name:(mainName||'レイヤー1'),color:LAYER_COLORS[0]});
+  S.layers.forEach(l=>{ if(!S.boards[l.id])S.boards[l.id]=BLANK_BOARD(); });
 }
-function inLayer(obj){
-  if(S.activeLayer==='all')return true;
-  const ids=elementLayerIds(obj);
-  return ids.length===0 || ids.includes(S.activeLayer);
-}
-function switchLayer(id){ S.activeLayer=id; render(); renderSidebar(); }
+function layerById(id){return S.layers.find(l=>l.id===id);}
+function switchLayer(id){ switchBoard(id); }   // each layer is its own canvas
 function addLayer(name){
   const id='ly'+uid();
   S.layers.push({id,name:(name||'').trim()||('レイヤー'+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length]});
+  S.boards[id]=BLANK_BOARD();          // adding a layer = a fresh blank diagram
   renderSidebar(); scheduleCommit();
   return id;
 }
 function renameLayer(id){
-  const ly=S.layers.find(l=>l.id===id);if(!ly)return;
+  const ly=layerById(id);if(!ly)return;
   showModal(`<h2>レイヤー名</h2><div class="fg"><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
     <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">保存</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();inp.select();
@@ -648,12 +643,20 @@ function renameLayer(id){
   });
 }
 function deleteLayer(id){
+  if(S.layers.length<=1)return;            // keep at least one layer
+  const wasCurrent=(S.currentBoard===id);
   S.layers=S.layers.filter(l=>l.id!==id);
-  if(S.activeLayer===id)S.activeLayer='all';
-  render();renderSidebar();scheduleCommit();
+  delete S.boards[id];
+  if(wasCurrent){ S.currentBoard=S.layers[0].id; loadActiveBoard(); render(); applyTf(); resetHistory(); }
+  else render();
+  renderSidebar(); scheduleCommit();
 }
-function layerById(id){return S.layers.find(l=>l.id===id);}
-function inLayerById(id){const o=cardById(id)||branchById(id);return o?inLayer(o):true;}
+// Jump from a [[layer]] tag to that layer's canvas; focus the same-named card if it exists there.
+function jumpToLayer(layerId,cardName){
+  const ly=layerById(layerId);if(!ly)return;
+  if(S.currentBoard!==ly.id)switchBoard(ly.id);
+  if(cardName){ const c=S.cards.find(x=>(x.name||'').trim()===(cardName||'').trim()); if(c)focusCard(c.id); }
+}
 function switchBoard(id){
   if(id===S.currentBoard)return;
   if(id!=='main'&&!S.boards[id])return;
@@ -776,25 +779,24 @@ function makeClueItem(c){
   return it;
 }
 let _dragCardMoveId=null;
-function makeLayerItem(en){ // en: {id, name, color, isLayer}
-  const it=document.createElement('div');it.className='q-item'+(S.activeLayer===en.id?' active':'');
-  const ico=document.createElement('span');ico.className='q-ico';
-  if(en.isLayer){ico.textContent='●';ico.style.color=en.color;}else ico.textContent='◎';
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.name;ti.title=en.name;
+function makeLayerItem(l){ // l: {id, name, color} — each layer is its own canvas (board)
+  const it=document.createElement('div');it.className='q-item'+(S.currentBoard===l.id?' active':'');
+  const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color=l.color||'#9aa3b2';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=l.name;ti.title=l.name;
   it.appendChild(ico);it.appendChild(ti);
-  if(en.isLayer){
-    const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
-    del.onclick=e=>{e.stopPropagation();if(confirm('このレイヤーを削除しますか？（要素・解説タグは残ります）'))deleteLayer(en.id);};
-    it.appendChild(del);
-    it.ondblclick=e=>{e.stopPropagation();renameLayer(en.id);};
-    it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameLayer(en.id);};
-  }
-  it.onclick=()=>switchLayer(en.id);
+  const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
+  del.onclick=e=>{e.stopPropagation();
+    if(S.layers.length<=1){alert('レイヤーは最低1つ必要です。');return;}
+    if(confirm('このレイヤー（図）を削除しますか？この図の内容も削除されます。'))deleteLayer(l.id);
+  };
+  it.appendChild(del);
+  it.ondblclick=e=>{e.stopPropagation();renameLayer(l.id);};
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameLayer(l.id);};
+  it.onclick=()=>switchLayer(l.id);
   return it;
 }
 function focusCard(id){
   const c=cardById(id);if(!c)return;
-  if(!inLayer(c))S.activeLayer='all'; // make sure it's visible
   S.selection=[id];
   const r=wrap.getBoundingClientRect();
   S.panX=r.width/2-(c.x+cardEffW(c)/2)*S.zoom;
@@ -816,7 +818,8 @@ function makeCardListItem(c){
   return it;
 }
 function promptAddLayer(){
-  showModal(`<h2>時系列レイヤーを追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
+  showModal(`<h2>レイヤー（別の図）を追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
+    <div class="fg" style="font-size:12px;color:#9aa3b2">新しい白紙の図が追加されます。同名のカードを置けば、解説のレイヤータグからその図へジャンプできます。</div>
     <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">追加</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();
     const ok=()=>{const id=addLayer(inp.value);hideModal();switchLayer(id);};
@@ -841,10 +844,6 @@ function wireLayerChips(taId){
   });
 }
 // ── sidebar section builders (target = the list element to append into) ──
-function buildMainSection(t){
-  t.appendChild(sectionRow('メイン',S.showMain,()=>{S.showMain=!S.showMain;renderSidebar();}));
-  if(S.showMain)t.appendChild(makeBoardItem({id:'main',title:'メイン',ico:'🏠'}));
-}
 function buildQuestionSection(t){
   t.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
   if(S.showQuestions){
@@ -852,34 +851,11 @@ function buildQuestionSection(t){
     S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
   }
 }
-// The root board is no longer a special "メイン" home — it's just the first entry in the layer
-// list (renamable, like any layer). renameMain() edits its label.
-function renameMain(){
-  showModal(`<h2>名称を編集</h2><div class="fg"><input type="text" id="mn-name" value="${esc(S.mainTitle||'メイン')}"></div>
-    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="mn-ok">保存</button></div>`,()=>{
-    const inp=document.getElementById('mn-name');inp.focus();inp.select();
-    const ok=()=>{S.mainTitle=(inp.value||'').trim()||'メイン';hideModal();renderSidebar();autosaveLocalDebounced();cloudSaveDebounced();};
-    document.getElementById('mn-ok').onclick=ok; inp.onkeydown=e=>{if(e.key==='Enter')ok();};
-  });
-}
-function makeMainItem(){
-  const it=document.createElement('div');
-  it.className='q-item'+(S.currentBoard==='main'?' active':'');
-  const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color='#9aa3b2';
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=S.mainTitle||'メイン';ti.title=S.mainTitle||'メイン';
-  it.appendChild(ico);it.appendChild(ti);
-  it.onclick=()=>switchBoard('main');
-  it.ondblclick=e=>{e.stopPropagation();renameMain();};
-  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();renameMain();};
-  return it;
-}
-function buildLayerSection(t,includeMain){
+function buildLayerSection(t){
   t.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
   if(S.showLayers){
-    t.appendChild(addItemEl('＋','レイヤーを追加',promptAddLayer));
-    if(includeMain)t.appendChild(makeMainItem()); // root board = the first entry (no special "main" concept)
-    t.appendChild(makeLayerItem({id:'all',name:'すべて表示'}));
-    S.layers.forEach(l=>t.appendChild(makeLayerItem({id:l.id,name:l.name,color:l.color,isLayer:true})));
+    t.appendChild(addItemEl('＋','レイヤー（別の図）を追加',promptAddLayer));
+    S.layers.forEach(l=>t.appendChild(makeLayerItem(l))); // each layer = its own canvas; layer 1 (id 'main') is the first entry
   }
 }
 function buildClueSection(t){
@@ -899,15 +875,15 @@ function renderSidebar(){
   L.innerHTML='';R.innerHTML='';
   const mobile=window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
   if(mobile){
-    // one left panel, order: レイヤー(メイン内包) → 疑問 → 手がかり → カード
-    buildLayerSection(L,true);
+    // one left panel, order: レイヤー → 疑問 → 手がかり → カード
+    buildLayerSection(L);
     buildQuestionSection(L);
     buildClueSection(L);
     buildCardSection(L);
   } else {
-    // desktop: left = 疑問, right = レイヤー(メイン内包)/カード/手がかり
+    // desktop: left = 疑問, right = レイヤー / カード / 手がかり
     buildQuestionSection(L);
-    buildLayerSection(R,true);  // メイン merged into the layer section
+    buildLayerSection(R);
     buildCardSection(R);
     buildClueSection(R);
   }
@@ -1086,7 +1062,7 @@ function updateHints(){
 function renderZones(){
   zonesG.innerHTML='';
   S.zones.forEach(z=>{
-    const members=S.cards.filter(c=>z.cardIds.includes(c.id)&&inLayer(c)); // only members visible in active layer
+    const members=S.cards.filter(c=>z.cardIds.includes(c.id)); // zone members on this canvas
     if(!members.length)return;
     const col=z.color||'#4a9eff';
     // geometry of each member
@@ -1161,7 +1137,6 @@ function renderArrows(){
   });
 
   S.arrows.forEach(arr=>{
-    if(!inLayer(arr)||!inLayerById(arr.from)||!inLayerById(arr.to))return; // hidden in active layer
     const p1=nodeCenter(arr.from),p2=nodeCenter(arr.to);
     if(!p1||!p2)return;
 
@@ -1207,7 +1182,6 @@ function renderCardDOMs(){
   const ex=new Map();
   elems.querySelectorAll('.card[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.cards.forEach(card=>{
-    if(!inLayer(card))return; // hidden by the active time-series layer
     let el=ex.get(card.id);
     if(!el){el=createCardEl(card);elems.appendChild(el);}
     else{ex.delete(card.id);updateCardEl(el,card);}
@@ -1295,7 +1269,6 @@ function renderBranchDOMs(){
   const ex=new Map();
   elems.querySelectorAll('.branch[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.branches.forEach(br=>{
-    if(!inLayer(br))return;
     let el=ex.get(br.id);
     if(!el){el=createBranchEl(br);elems.appendChild(el);}
     else{ex.delete(br.id);updateBranchEl(el,br);}
@@ -1353,7 +1326,6 @@ function renderLabels(){
   elems.querySelectorAll('.akey-badge[data-keyarr]').forEach(e=>kex.set(e.dataset.keyarr,e));
 
   S.arrows.forEach(arr=>{
-    if(!inLayer(arr)||!inLayerById(arr.from)||!inLayerById(arr.to))return; // match arrow visibility
     const mid=arrowMid(arr);
     if(!mid)return;
     // label (text only)
@@ -1415,12 +1387,19 @@ function rectEdgePt(cx,cy,hw,hh,fromX,fromY){
   return{x:cx+dx*sc,y:cy+dy*sc};
 }
 // build desc HTML with [[layerName]] tags rendered as clickable, coloured links
-function descHtml(text){
+function descHtml(text, ownerName){
   let out='',last=0,m;const re=/\[\[([^\]]+)\]\]/g;
   while((m=re.exec(text))){
     out+=esc(text.slice(last,m.index));
-    const name=m[1].trim(),ly=S.layers.find(l=>l.name===name);
-    out+= ly?`<span class="layer-tag" data-layer="${ly.id}" style="color:${ly.color}">${esc(name)}</span>`:esc(m[0]);
+    const name=m[1].trim(), ly=S.layers.find(l=>l.name===name);
+    if(ly){
+      // a layer tag becomes a jump-link only when the SAME card (by name) exists on that layer's canvas
+      const tb=S.boards[ly.id];
+      const jump = !!(ownerName && tb && tb.cards && tb.cards.some(c=>(c.name||'').trim()===(ownerName||'').trim()));
+      out += jump
+        ? `<span class="layer-tag" data-layer="${ly.id}" data-card="${esc(ownerName)}" style="color:${ly.color}">${esc(name)}</span>`
+        : `<span style="color:${ly.color};font-weight:bold">${esc(name)}</span>`; // styled, but no same-name card → not a jump
+    } else out+=esc(m[0]);
     last=m.index+m[0].length;
   }
   return out+esc(text.slice(last));
@@ -1428,10 +1407,10 @@ function descHtml(text){
 function renderDescs(){
   const want=[];
   if(S.showDesc){
-    S.cards.forEach(c=>{if(c.desc&&c.desc.trim()&&inLayer(c))want.push({id:c.id,owner:c,kind:'card'});});
-    S.branches.forEach(b=>{if(b.desc&&b.desc.trim()&&inLayer(b))want.push({id:b.id,owner:b,kind:'branch'});});
-    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim()&&inLayer(a)&&inLayerById(a.from)&&inLayerById(a.to))want.push({id:a.id,owner:a,kind:'arrow'});});
-    S.images.forEach(im=>{if(im.desc&&im.desc.trim()&&inLayer(im))want.push({id:im.id,owner:im,kind:'image'});});
+    S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
+    S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
+    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
+    S.images.forEach(im=>{if(im.desc&&im.desc.trim())want.push({id:im.id,owner:im,kind:'image'});});
   }
   const ex=new Map();
   elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
@@ -1450,10 +1429,10 @@ function renderDescs(){
       box=document.createElement('div');box.className='desc-box';box.dataset.descId=w.id;
       box.addEventListener('mousedown',e=>onDescMousedown(e,w.id,w.kind));
       box.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onDescCtx(e,w.id,w.kind)});
-      box.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest('.layer-tag');if(t){e.stopPropagation();switchLayer(t.dataset.layer);}});
+      box.addEventListener('click',e=>{const t=e.target.closest&&e.target.closest('.layer-tag');if(t){e.stopPropagation();jumpToLayer(t.dataset.layer,t.dataset.card);}});
       elems.appendChild(box);
     } else ex.delete(w.id);
-    box.innerHTML=descHtml(w.owner.desc); // renders [[layer]] tags as clickable bold+coloured links
+    box.innerHTML=descHtml(w.owner.desc, w.kind==='card'?w.owner.name:''); // [[layer]] → jump-link to that layer's canvas (focus same-named card)
     box.style.left=bx+'px';box.style.top=by+'px';
     box.style.fontSize=(11*(w.owner.descScale||1))+'px';
     // dotted leader line, clipped to the box edge
@@ -1552,7 +1531,6 @@ function renderImages(){
   const ex=new Map();
   elems.querySelectorAll('.imgel[data-id]').forEach(e=>ex.set(e.dataset.id,e));
   S.images.forEach(im=>{
-    if(!inLayer(im))return;
     let el=ex.get(im.id);
     if(!el){
       el=document.createElement('div');el.className='imgel';el.dataset.id=im.id;
@@ -2313,7 +2291,7 @@ function connectTouchStart(e,fromId){
 function descTouchStart(e,id){
   if(e.touches.length!==1)return;
   const tag=e.target.closest&&e.target.closest('.layer-tag');
-  if(tag){e.stopPropagation();e.preventDefault();switchLayer(tag.dataset.layer);return;} // tap tag → jump to layer
+  if(tag){e.stopPropagation();e.preventDefault();jumpToLayer(tag.dataset.layer,tag.dataset.card);return;} // tap tag → jump to that layer's canvas
   e.stopPropagation();e.preventDefault();
   const owner=ownerByDescId(id);if(!owner)return;const kind=descKindOf(id);
   if(!owner.descOff)owner.descOff=defaultDescOff(owner,kind);
@@ -2458,7 +2436,7 @@ document.getElementById('bg-sel').onchange=function(){
 document.getElementById('btn-del-all').onclick=()=>{
   if(!confirm('すべての要素を削除しますか？この操作は元に戻せません。'))return;
   if(!confirm('本当に削除します。よろしいですか？（最終確認）'))return;
-  S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];S.layers=[];S.activeLayer='all';renderAll();
+  S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];renderAll(); // clears the current layer's canvas (layers themselves are kept)
 };
 
 // ── SAVE ──
@@ -2469,7 +2447,7 @@ function saveFile(){
     version:2,
     bg:S.bg,showDesc:S.showDesc,
     currentBoard:S.currentBoard,
-    mainTitle:S.mainTitle,
+    layers:S.layers,
     questions:S.questions,
     clues:S.clues,
     showMain:S.showMain,
@@ -2494,7 +2472,6 @@ function applyDocData(d){
   _loadingDoc=true;
   S.bg=d.bg||'grid';
   S.showDesc=d.showDesc!==false;
-  S.mainTitle=d.mainTitle||'メイン';
   S.clues=d.clues||[];
   S.showMain=d.showMain!==false;
   S.showCards=d.showCards!==false; S.showLayers=d.showLayers!==false;
@@ -2504,11 +2481,15 @@ function applyDocData(d){
     S.boards=d.boards;
     S.questions=d.questions||[];
     S.currentBoard=(d.currentBoard&&d.boards[d.currentBoard])?d.currentBoard:'main';
-    if(!S.boards.main)S.boards.main={cards:[],arrows:[],branches:[],zones:[],subtitles:[],images:[]};
+    if(!S.boards.main)S.boards.main=BLANK_BOARD();
   } else {
     S.boards={main:{cards:d.cards||[],arrows:d.arrows||[],branches:d.branches||[],zones:d.zones||[],subtitles:d.subtitles||[],images:d.images||[]}};
     S.questions=[]; S.currentBoard='main';
   }
+  // time-series layers are a global list of canvases; migrate older docs (mainTitle → レイヤー1)
+  S.layers=Array.isArray(d.layers)?d.layers.slice():[];
+  ensureLayers(d.mainTitle);
+  if(!S.layers.some(l=>l.id===S.currentBoard) && !S.questions.some(q=>q.id===S.currentBoard)) S.currentBoard='main';
   loadActiveBoard();
   document.getElementById('bg-sel').value=S.bg;
   document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
@@ -2517,7 +2498,7 @@ function applyDocData(d){
 }
 function currentDocData(){
   saveActiveBoard();
-  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,mainTitle:S.mainTitle,
+  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,layers:S.layers,
     questions:S.questions,clues:S.clues,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
@@ -2644,6 +2625,7 @@ render();
 // Restore the browser autosave if present; otherwise seed demo data (first visit).
 const _restored = tryRestoreLocal();
 if(!_restored){
+  S.layers=[{id:'main',name:'レイヤー1',color:LAYER_COLORS[0]}]; // fresh start: layer 1 = the main canvas
   (function demo(){
     const id1=uid(),id2=uid(),id3=uid();
     S.cards.push(
