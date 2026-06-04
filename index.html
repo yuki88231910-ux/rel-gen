@@ -907,7 +907,7 @@ function focusCard(id){
   applyTf();render();
 }
 // meta = {id,name,color} of the layer/board this card lives on (cards are shared across layers in the sidebar).
-function makeCardListItem(c, boardId){
+function makeCardListItem(c, boardId, boards){
   const fromBoard=boardId||S.currentBoard;
   const onCurrent=fromBoard===S.currentBoard;
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;it.dataset.cardBoard=fromBoard;
@@ -916,8 +916,9 @@ function makeCardListItem(c, boardId){
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
   it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());
-  // click never jumps layers: focus only when the card is on the current canvas
-  it.onclick=()=>{ if(onCurrent)focusCard(c.id); };
+  // click → jump to the layer/疑問 the card is on (choose when it's on several), like the 疑問・伏線 list
+  it.onclick=()=>{ const bs=(boards&&boards.length)?boards:[fromBoard]; const nm=(c.name||'').trim();
+    bs.length>1 ? chooseKeyBoard(nm,bs) : jumpToKey(nm,bs[0]); };
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(onCurrent)openCardEditor(c.id);}; // edit only the current canvas's card
   // drag onto canvas: same-layer card → reposition; other-layer card → place the SAME card on this layer
   it.classList.add('q-drag-h');it.draggable=true;
@@ -1006,17 +1007,24 @@ function buildClueSection(t){
     S.clues.forEach(c=>t.appendChild(makeClueItem(c)));
   }
 }
-// the UNIQUE card list (shared across layers, 手がかり-cards excluded), ordered by S.cardOrder
+// the UNIQUE card list (shared across layers, 手がかり-cards excluded), ordered by S.cardOrder.
+// each entry also records `boards` = every layer/疑問 the card appears on (for jump targets).
 function cardEntries(){
   saveActiveBoard(); // sync the live current canvas into S.boards first
-  const boardIds=S.layers.map(l=>l.id);
-  if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
   const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean)); // 手がかり由来/同名は除外
+  // contents: layers + the current board (so a 疑問's cards show while it's open)
+  const contentBoards=S.layers.map(l=>l.id);
+  if(!contentBoards.includes(S.currentBoard))contentBoards.push(S.currentBoard);
   const uniq=new Map();
-  boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
+  contentBoards.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
     bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
       const key=(c.name||'').trim()||(' '+c.id);
-      if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{key,card:c,boardId:bid}); });
+      if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{key,card:c,boardId:bid,boards:[]}); });
+  });
+  // jump targets: every layer + 疑問 board that holds a same-named card
+  S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)).forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
+    bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
+      const e=uniq.get((c.name||'').trim()||(' '+c.id)); if(e&&!e.boards.includes(bid))e.boards.push(bid); });
   });
   const entries=[...uniq.values()], order=S.cardOrder||[];
   entries.sort((a,b)=>{ let ia=order.indexOf(a.key), ib=order.indexOf(b.key); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
@@ -1025,7 +1033,7 @@ function cardEntries(){
 function buildCardSection(t){
   t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
   if(!S.showCards)return;
-  cardEntries().forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
+  cardEntries().forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)));
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
