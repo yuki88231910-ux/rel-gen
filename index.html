@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, user-scalable=no">
 <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
 <meta http-equiv="Pragma" content="no-cache">
 <meta http-equiv="Expires" content="0">
@@ -15,6 +15,9 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 #menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:200;flex-wrap:wrap}
 #app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
 .menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
+.menu-sep.menu-push{width:3px;height:30px;margin:0 9px;background:#7a5aff;border-radius:2px;box-shadow:0 0 6px rgba(122,90,255,.45)} /* the major divider splitting 編集 | 保存 groups */
+.mbtn.save-grp{background:#202a4d;border-color:#46568c} /* 保存/ファイル/アカウント group — distinct tint from the edit tools */
+.mbtn.save-grp:hover{background:#2c3a66;border-color:#6a7ab0}
 .mbtn{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;font-family:inherit}
 .mbtn:hover{background:#2a2a6a;border-color:#6a6aaa}
 .mbtn.active{background:#6a3aaa;border-color:#9a6aff;color:#fff}
@@ -330,16 +333,16 @@ body.sb-hidden #sidebar,body.sb-hidden #sidebar-right{display:none}
   <button class="mbtn" id="btn-align" title="複数選択(Ctrl+クリック)した要素を整列" disabled>⬓ 配置 ▾</button>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
-  <div class="menu-sep"></div>
-  <button class="mbtn" id="btn-save">💾 保存</button>
-  <button class="mbtn" id="btn-load">📂 読み込み</button>
+  <div class="menu-sep menu-push"></div>
+  <button class="mbtn save-grp" id="btn-save">💾 保存</button>
+  <button class="mbtn save-grp" id="btn-load">📂 読み込み</button>
   <input type="file" id="file-input" style="display:none" accept=".json">
   <div class="menu-sep"></div>
-  <button class="mbtn" id="btn-login">👤 Googleでログイン</button>
-  <button class="mbtn" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
+  <button class="mbtn save-grp" id="btn-login">👤 Googleでログイン</button>
+  <button class="mbtn save-grp" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
   <span id="cloud-status"></span>
   <div class="menu-sep"></div>
-  <button class="mbtn danger" id="btn-del-all">🗑 すべて削除</button>
+  <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
 
 <div id="content">
@@ -803,18 +806,27 @@ function focusCard(id){
   S.panY=r.height/2-(c.y+cardEffH(c)/2)*S.zoom;
   applyTf();render();
 }
-function makeCardListItem(c){
+// meta = {id,name,color} of the layer/board this card lives on (cards are shared across layers in the sidebar).
+function makeCardListItem(c, meta, showDot){
+  const onCurrent = !meta || meta.id===S.currentBoard;
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=(c.name||'')+(meta&&!onCurrent?'（'+meta.name+'）':'');
   it.appendChild(th);it.appendChild(ti);
-  it.onclick=()=>focusCard(c.id);
-  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openCardEditor(c.id);}; // right-click → edit
-  it.classList.add('q-drag-h');it.draggable=true;
-  it.addEventListener('dragstart',ev=>{_dragCardMoveId=c.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
-  it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardMoveId=null;});
+  if(meta&&showDot){ // small dot showing which layer the card belongs to (only when there are multiple layers)
+    const dot=document.createElement('span');dot.style.cssText='width:9px;height:9px;border-radius:50%;flex:0 0 auto;margin-left:auto';
+    dot.style.background=meta.color||'#9aa3b2';dot.title=meta.name;it.appendChild(dot);
+  }
+  const go=()=>{ if(meta&&meta.id!==S.currentBoard)switchBoard(meta.id); focusCard(c.id); };
+  it.onclick=go;
+  it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(meta&&meta.id!==S.currentBoard)switchBoard(meta.id); openCardEditor(c.id);}; // right-click → edit
+  if(onCurrent){ // drag-to-canvas reposition only for cards on the current canvas
+    it.classList.add('q-drag-h');it.draggable=true;
+    it.addEventListener('dragstart',ev=>{_dragCardMoveId=c.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',c.id);}catch(e){}it.classList.add('q-dragging');});
+    it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');_dragCardMoveId=null;});
+  }
   return it;
 }
 function promptAddLayer(){
@@ -867,7 +879,16 @@ function buildClueSection(t){
 }
 function buildCardSection(t){
   t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
-  if(S.showCards)S.cards.forEach(c=>t.appendChild(makeCardListItem(c)));
+  if(!S.showCards)return;
+  // Cards are shared across layers in the sidebar: list every layer's cards (not just the current one).
+  saveActiveBoard(); // sync the live current canvas into S.boards first
+  const metas=S.layers.map(l=>({id:l.id,name:l.name,color:l.color}));
+  if(!metas.some(m=>m.id===S.currentBoard)){ // current board is a 疑問 (not a layer) → still show its cards
+    const q=S.questions.find(q=>q.id===S.currentBoard);
+    metas.push({id:S.currentBoard,name:q?q.title:'現在の図',color:'#9aa3b2'});
+  }
+  const showDot=metas.length>1;
+  metas.forEach(m=>{ const bd=S.boards[m.id]; if(bd&&bd.cards)bd.cards.forEach(c=>t.appendChild(makeCardListItem(c,m,showDot))); });
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
