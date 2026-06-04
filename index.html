@@ -346,11 +346,11 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <div class="menu-sep menu-push"></div>
   <button class="mbtn save-grp" id="btn-save">💾 保存</button>
   <button class="mbtn save-grp" id="btn-load">📂 読み込み</button>
+  <button class="mbtn save-grp" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
+  <span id="cloud-status"></span>
   <input type="file" id="file-input" style="display:none" accept=".json">
   <div class="menu-sep"></div>
   <button class="mbtn save-grp" id="btn-login">👤 Googleでログイン</button>
-  <button class="mbtn save-grp" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
-  <span id="cloud-status"></span>
   <div class="menu-sep"></div>
   <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
@@ -735,7 +735,7 @@ function makeBoardItem(en){
     it.classList.add('q-drag-h');
     it.dataset.qid=en.id;
     it.draggable=true;
-    it.addEventListener('dragstart',ev=>{_dragQId=en.id;try{ev.dataTransfer.effectAllowed='move';ev.dataTransfer.setData('text/plain',en.id);}catch(e){}it.classList.add('q-dragging');});
+    it.addEventListener('dragstart',ev=>{_dragQId=en.id;try{ev.dataTransfer.effectAllowed='copyMove';ev.dataTransfer.setData('text/plain',en.id);}catch(e){}it.classList.add('q-dragging');}); // copyMove so it can drop on the canvas (copy) AND reorder (move)
     it.addEventListener('dragend',()=>{it.classList.remove('q-dragging');clearDropMarks();_dragQId=null;});
     it.addEventListener('dragover',ev=>{
       if(!_dragQId||_dragQId===en.id)return;
@@ -894,9 +894,9 @@ function wireLayerChips(taId){
 }
 // ── sidebar section builders (target = the list element to append into) ──
 function buildQuestionSection(t){
-  t.appendChild(sectionRow('疑問',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
+  t.appendChild(sectionRow('疑問・伏線',S.showQuestions,()=>{S.showQuestions=!S.showQuestions;renderSidebar();}));
   if(S.showQuestions){
-    t.appendChild(addItemEl('＋','疑問を追加',addQuestion));
+    t.appendChild(addItemEl('＋','疑問・伏線を追加',addQuestion));
     S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
   }
 }
@@ -923,7 +923,8 @@ function buildCardSection(t){
   if(!boardIds.includes(S.currentBoard))boardIds.push(S.currentBoard); // include a 疑問 board's cards too
   const uniq=new Map(); // name → {card, boardId}; prefer the current layer's instance
   boardIds.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
+    bd.cards.forEach(c=>{ if(c.fromClue)return; // 手がかり由来のカードはカード一覧に出さない（手がかりセクションが持つ）
+      const key=(c.name||'').trim()||(' '+c.id); // unnamed cards stay distinct
       if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{card:c,boardId:bid}); });
   });
   uniq.forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId)));
@@ -957,7 +958,7 @@ function deleteClue(id){S.clues=S.clues.filter(c=>c.id!==id);renderSidebar();}
 function placeClueOnCanvas(clueId,x,y){
   const c=S.clues.find(q=>q.id===clueId);if(!c)return;
   S.cards.push({id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
-    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[]});
+    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true});
   renderAll();
 }
 function openClueEditor(id){
