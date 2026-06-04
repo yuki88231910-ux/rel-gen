@@ -625,7 +625,11 @@ function keyMenuItem(obj, isCard){
 function setCardKey(card, value){
   card.key=value;
   const nm=(card.name||'').trim();
-  if(nm){ saveActiveBoard(); Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if((c.name||'').trim()===nm)c.key=value; })); }
+  if(nm){
+    saveActiveBoard();
+    Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if((c.name||'').trim()===nm)c.key=value; }));
+    S.clues.forEach(cl=>{ if((cl.name||'').trim()===nm)cl.key=value; }); // keep the matching 手がかり (palette) in sync
+  }
   render();renderSidebar();scheduleCommit();
 }
 // gather key cards across all layers, unique by name, recording which layers each appears on
@@ -822,6 +826,7 @@ function sectionRow(label,visible,onToggle){
 function addItemEl(label,title,onClick){
   const a=document.createElement('div');a.className='q-item q-add-item';a.textContent='＋';a.title=title;a.onclick=onClick;return a;
 }
+function keyTagEl(){const s=document.createElement('span');s.textContent='🔑';s.title='キー';s.style.cssText='flex:0 0 auto;font-size:13px;margin:0 2px';return s;}
 function makeClueItem(c){
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.clueId=c.id;
   const th=document.createElement('span');th.className='clue-thumb';
@@ -830,7 +835,7 @@ function makeClueItem(c){
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'手がかり';ti.title=c.name||'';
   const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
   del.onclick=e=>{e.stopPropagation();if(confirm('この手がかりを削除しますか？'))deleteClue(c.id);};
-  it.appendChild(th);it.appendChild(ti);it.appendChild(del);
+  it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());it.appendChild(del);
   it.onclick=()=>openClueEditor(c.id);
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation();openClueEditor(c.id);}; // right-click → edit
   it.classList.add('q-drag-h');
@@ -873,7 +878,7 @@ function makeCardListItem(c, boardId){
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
-  it.appendChild(th);it.appendChild(ti);
+  it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());
   // click never jumps layers: focus only when the card is on the current canvas
   it.onclick=()=>{ if(onCurrent)focusCard(c.id); };
   it.oncontextmenu=e=>{e.preventDefault();e.stopPropagation(); if(onCurrent)openCardEditor(c.id);}; // edit only the current canvas's card
@@ -1009,8 +1014,11 @@ function addClue(){
 function deleteClue(id){S.clues=S.clues.filter(c=>c.id!==id);renderSidebar();}
 function placeClueOnCanvas(clueId,x,y){
   const c=S.clues.find(q=>q.id===clueId);if(!c)return;
+  const nm=(c.name||'').trim();
+  // a key belongs to the entity → inherit it from the clue (or any same-named key card already on a layer)
+  const isKey = !!c.key || (!!nm && Object.values(S.boards).some(bd=>(bd.cards||[]).some(cc=>(cc.name||'').trim()===nm&&cc.key)));
   S.cards.push({id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
-    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true});
+    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true,key:isKey});
   renderAll();
 }
 function openClueEditor(id){
