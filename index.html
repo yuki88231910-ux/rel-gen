@@ -458,8 +458,9 @@ const hintBranch= document.getElementById('hint-branch');
 let history=[], histIdx=-1, _commitTimer=null, _suppressCommit=false, _dirty=false, _loadingDoc=false;
 const HIST_MAX=60;
 function docState(){
-  return JSON.stringify({cards:S.cards,arrows:S.arrows,branches:S.branches,zones:S.zones,
-    subtitles:S.subtitles,images:S.images,bg:S.bg,showDesc:S.showDesc});
+  // GLOBAL snapshot of the whole document (every board/layer/疑問) so undo works across board switches
+  saveActiveBoard(); // fold the live canvas back into S.boards first
+  return JSON.stringify({boards:S.boards,layers:S.layers,questions:S.questions,clues:S.clues,bg:S.bg,showDesc:S.showDesc});
 }
 function scheduleCommit(){
   if(_suppressCommit||_loadingDoc)return;
@@ -494,21 +495,25 @@ function tryRestoreLocal(){
 function commitNow(){
   clearTimeout(_commitTimer);
   if(_suppressCommit)return;
-  const snap=docState();
+  const content=docState();
   _dirty=false;
-  if(histIdx>=0&&history[histIdx]===snap){updateUndoUI();return;} // no real change
+  if(histIdx>=0&&history[histIdx].content===content){updateUndoUI();return;} // no content change (e.g. just switched layer/疑問)
   history=history.slice(0,histIdx+1);
-  history.push(snap);
+  history.push({content,board:S.currentBoard}); // remember which board this edit was made on
   if(history.length>HIST_MAX)history.shift();
   histIdx=history.length-1;
   updateUndoUI();
 }
-function applyState(snap){
-  const d=JSON.parse(snap);
-  S.cards=d.cards;S.arrows=d.arrows;S.branches=d.branches;S.zones=d.zones;
-  S.subtitles=d.subtitles;S.images=d.images;S.bg=d.bg;S.showDesc=d.showDesc;
+// Restore a whole-document snapshot, viewing `viewBoard` (the board where that edit happened)
+function applyState(content, viewBoard){
+  const d=JSON.parse(content);
+  S.boards=d.boards||{}; S.layers=d.layers||S.layers; S.questions=d.questions||S.questions;
+  S.clues=d.clues||S.clues; S.bg=d.bg; S.showDesc=d.showDesc;
+  S.currentBoard = (viewBoard&&S.boards[viewBoard]) ? viewBoard
+                 : (S.boards[S.currentBoard]?S.currentBoard:(S.layers[0]?S.layers[0].id:'main'));
+  loadActiveBoard();
   _dirty=false;_suppressCommit=true;
-  render();
+  render();applyTf();renderSidebar();
   const bgSel=document.getElementById('bg-sel');if(bgSel)bgSel.value=S.bg;
   const db=document.getElementById('btn-toggle-desc');if(db)db.classList.toggle('active',S.showDesc);
   _suppressCommit=false;
@@ -517,11 +522,12 @@ function applyState(snap){
 function undo(){
   commitNow();          // flush any pending change first
   if(histIdx<=0)return;
-  histIdx--;applyState(history[histIdx]);updateUndoUI();
+  const editBoard=history[histIdx].board; // go back to the layer/疑問 where the undone action happened
+  histIdx--;applyState(history[histIdx].content, editBoard);updateUndoUI();
 }
 function redo(){
   if(histIdx>=history.length-1)return;
-  histIdx++;applyState(history[histIdx]);updateUndoUI();
+  histIdx++;applyState(history[histIdx].content, history[histIdx].board);updateUndoUI();
 }
 function resetHistory(){history=[];histIdx=-1;_dirty=false;commitNow();}
 function updateUndoUI(){
@@ -660,9 +666,9 @@ function deleteLayer(id){
   const wasCurrent=(S.currentBoard===id);
   S.layers=S.layers.filter(l=>l.id!==id);
   delete S.boards[id];
-  if(wasCurrent){ S.currentBoard=S.layers[0].id; loadActiveBoard(); render(); applyTf(); resetHistory(); }
+  if(wasCurrent){ S.currentBoard=S.layers[0].id; loadActiveBoard(); render(); applyTf(); }
   else render();
-  renderSidebar(); scheduleCommit();
+  renderSidebar(); scheduleCommit(); // deletion is an undoable content change (global history can restore it)
 }
 // Jump from a [[layer]] tag to that layer's canvas; focus the same-named card if it exists there.
 function jumpToLayer(layerId,cardName){
@@ -673,10 +679,11 @@ function jumpToLayer(layerId,cardName){
 function switchBoard(id){
   if(id===S.currentBoard)return;
   if(id!=='main'&&!S.boards[id])return;
+  commitNow();          // flush any pending edit on the current board into history before leaving
   saveActiveBoard();
   S.currentBoard=id;
   loadActiveBoard();
-  render();applyTf();renderSidebar();resetHistory();
+  render();applyTf();renderSidebar();  // history is GLOBAL now — do NOT reset on switch, so 戻る can return to the previous layer
 }
 function addQuestion(){
   showModal(`
@@ -716,8 +723,8 @@ function renameQuestion(id){
 function deleteQuestion(id){
   S.questions=S.questions.filter(q=>q.id!==id);
   delete S.boards[id];
-  if(S.currentBoard===id){S.currentBoard='main';loadActiveBoard();render();applyTf();resetHistory();}
-  renderSidebar();
+  if(S.currentBoard===id){S.currentBoard='main';loadActiveBoard();render();applyTf();}
+  renderSidebar();scheduleCommit(); // undoable content change
 }
 function makeBoardItem(en){
   const it=document.createElement('div');
