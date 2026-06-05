@@ -14,11 +14,13 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 /* ── MENUBAR ── */
 #menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:200;flex-wrap:wrap}
 #app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
-/* document title: empty (placeholder shown) or focused → boxed input; filled & resting → just text */
-#doc-title{background:transparent;border:1px solid transparent;border-radius:6px;color:#fff;font-size:13px;font-weight:600;padding:5px 8px;max-width:230px;width:auto;min-width:90px;font-family:inherit;outline:none;transition:background .15s,border-color .15s}
-#doc-title::placeholder{color:#7a7ab0;font-weight:400}
-#doc-title:placeholder-shown{background:#1e1e4a;border-color:#3a3a6a}
-#doc-title:focus{background:#0d0d24;border-color:#6a6aaa}
+.menu-break{flex-basis:100%;width:100%;height:0;margin:0;padding:0} /* forces the title onto its own row */
+/* document title: prominent. empty (placeholder shown) or focused → boxed input; filled & resting → just big text */
+#doc-title{background:transparent;border:1px solid transparent;border-radius:7px;color:#fff;font-size:20px;font-weight:700;letter-spacing:.02em;padding:3px 10px;max-width:520px;width:auto;min-width:170px;font-family:inherit;outline:none;text-shadow:0 1px 6px rgba(0,0,0,.4);transition:background .15s,border-color .15s}
+#doc-title::placeholder{color:#8a8ad0;font-weight:500;text-shadow:none}
+#doc-title:placeholder-shown{background:#1e1e4a;border-color:#5a5a9a}
+#doc-title:hover:not(:focus){border-color:#3a3a6a}
+#doc-title:focus{background:#0d0d24;border-color:#7a7aff;box-shadow:0 0 0 2px rgba(122,122,255,.18)}
 .menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
 .menu-sep.menu-push{width:3px;height:30px;margin:0 9px;background:#7a5aff;border-radius:2px;box-shadow:0 0 6px rgba(122,90,255,.45)} /* the major divider splitting 編集 | 保存 groups */
 .mbtn.save-grp{background:#202a4d;border-color:#46568c} /* 保存/ファイル/アカウント group — distinct tint from the edit tools */
@@ -213,7 +215,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   #menubar .menu-sep{display:none}
   #app-title{font-size:16px;padding:2px 2px 8px;border-bottom:1px solid #2a2a5a;width:100%}
   #menubar .mbtn,#menubar #bg-sel{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
-  #doc-title{width:100%;max-width:none;min-height:44px;font-size:15px;background:#1e1e4a;border-color:#3a3a6a} /* always boxed in the drawer */
+  #doc-title{width:100%;max-width:none;min-height:46px;font-size:18px;background:#1e1e4a;border-color:#5a5a9a} /* prominent, always boxed in the drawer */
   #cloud-status{padding:2px 4px}
   /* sidebar uses the SAME slide-in drawer UI as the menu (same width / style / animation) */
   #sidebar-right{display:none}
@@ -333,8 +335,8 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 
 <div id="menubar">
   <span id="app-title">🔍 ClueBoard</span>
-  <input id="doc-title" placeholder="タイトル" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
-  <div class="menu-sep"></div>
+  <input id="doc-title" placeholder="タイトルを入力" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
+  <div class="menu-break"></div>
   <button class="mbtn" id="btn-undo" title="元に戻す (Ctrl+Z)" disabled>↶ 戻る</button>
   <button class="mbtn" id="btn-redo" title="やり直し (Ctrl+Y)" disabled>↷ 進む</button>
   <div class="menu-sep"></div>
@@ -353,11 +355,10 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <div class="menu-sep menu-push"></div>
   <button class="mbtn save-grp" id="btn-save">💾 保存</button>
   <button class="mbtn save-grp" id="btn-load">📂 読み込み</button>
+  <button class="mbtn save-grp" id="btn-login">👤 Googleでログイン</button>
   <button class="mbtn save-grp" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
   <span id="cloud-status"></span>
   <input type="file" id="file-input" style="display:none" accept=".json">
-  <div class="menu-sep"></div>
-  <button class="mbtn save-grp" id="btn-login">👤 Googleでログイン</button>
   <div class="menu-sep"></div>
   <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
