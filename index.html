@@ -957,7 +957,7 @@ function focusCard(id){
 function makeCardListItem(c, boardId, boards){
   const fromBoard=boardId||S.currentBoard;
   const onCurrent=fromBoard===S.currentBoard;
-  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;it.dataset.cardBoard=fromBoard;
+  const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;it.dataset.cardBoard=fromBoard;it.dataset.cardkey=(c.name||'').trim()||(' '+c.id);
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
@@ -2600,17 +2600,45 @@ function listDragTouch(e,onDrop){
 }
 function clueTouchStart(e,clueId){ listDragTouch(e,pt=>placeClueOnCanvas(clueId,pt.x,pt.y)); } // tap → onclick (edit)
 function questionTouchStart(e,qid){ listDragTouch(e,pt=>placeQuestionOnCanvas(qid,pt.x,pt.y)); } // drag → link node; tap → onclick (open board)
-function cardListTouchStart(e,cardId,fromBoard){ // drag a card onto the canvas (cross-layer = place the same card here); tap → onclick
+// card list touch: long-press → reorder (up/down); horizontal drag → place on canvas; vertical → scroll; tap → onclick
+function cardListTouchStart(e, it){
+  if(e.touches.length!==1)return;
+  const cardId=it.dataset.cardId, fromBoard=it.dataset.cardBoard, key=it.dataset.cardkey;
   const src = fromBoard===S.currentBoard ? cardById(cardId)
             : ((S.boards[fromBoard]&&S.boards[fromBoard].cards||[]).find(c=>c.id===cardId));
-  if(!src)return;
-  listDragTouch(e,pt=>placeCardOnCanvas(src,fromBoard,pt.x,pt.y));
+  const t0=e.touches[0], sx=t0.clientX, sy=t0.clientY;
+  let mode=null; // null | 'scroll' | 'canvas' | 'reorder'
+  const under=(x,y)=>{const el=document.elementFromPoint(x,y);return el&&el.closest&&el.closest('.clue-item[data-card-id]');};
+  const lp=setTimeout(()=>{ if(mode===null){ mode='reorder'; it.classList.add('q-dragging'); try{navigator.vibrate&&navigator.vibrate(12);}catch(_){ } } },340); // hold to pick up
+  const tm=ev=>{ const t=ev.touches[0]; if(!t)return;
+    const dx=t.clientX-sx, dy=t.clientY-sy;
+    if(mode===null){
+      if(Math.abs(dx)>8&&Math.abs(dx)>=Math.abs(dy)){ mode='canvas'; clearTimeout(lp); }   // horizontal → canvas
+      else if(Math.abs(dy)>8){ mode='scroll'; clearTimeout(lp); }                          // vertical → scroll
+    }
+    if(mode==='canvas'){ ev.preventDefault(); }
+    else if(mode==='reorder'){ ev.preventDefault();
+      const over=under(t.clientX,t.clientY); clearDropMarks();
+      if(over&&over!==it){ const r=over.getBoundingClientRect(); over.classList.add(t.clientY>r.top+r.height/2?'q-over-bottom':'q-over-top'); }
+    }
+  };
+  const te=ev=>{ clearTimeout(lp);
+    window.removeEventListener('touchmove',tm); window.removeEventListener('touchend',te);
+    it.classList.remove('q-dragging');
+    const ch=ev.changedTouches[0];
+    if(mode==='canvas'&&src&&ch){ const r=wrap.getBoundingClientRect();
+      if(ch.clientX>=r.left&&ch.clientX<=r.right&&ch.clientY>=r.top&&ch.clientY<=r.bottom){ const pt=s2c(ch.clientX,ch.clientY); placeCardOnCanvas(src,fromBoard,pt.x,pt.y); } }
+    else if(mode==='reorder'){ if(ev.cancelable)ev.preventDefault(); // suppress the tap-click after a reorder
+      const over=ch&&under(ch.clientX,ch.clientY); clearDropMarks();
+      if(over&&over!==it&&over.dataset.cardkey){ const r=over.getBoundingClientRect(); const after=ch.clientY>r.top+r.height/2; moveCard(key,over.dataset.cardkey,after); } }
+  };
+  window.addEventListener('touchmove',tm,{passive:false}); window.addEventListener('touchend',te);
 }
 function sidebarTouchDelegate(e){
   const it=e.target.closest&&e.target.closest('.clue-item,.q-item[data-qid]');
   if(!it)return;
   if(it.dataset.clueId)clueTouchStart(e,it.dataset.clueId);
-  else if(it.dataset.cardId)cardListTouchStart(e,it.dataset.cardId,it.dataset.cardBoard);
+  else if(it.dataset.cardId)cardListTouchStart(e,it);
   else if(it.dataset.qid)questionTouchStart(e,it.dataset.qid);
 }
 document.getElementById('q-list-right').addEventListener('touchstart',sidebarTouchDelegate,{passive:false});
