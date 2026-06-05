@@ -14,6 +14,11 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 /* ── MENUBAR ── */
 #menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:200;flex-wrap:wrap}
 #app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
+/* document title: empty (placeholder shown) or focused → boxed input; filled & resting → just text */
+#doc-title{background:transparent;border:1px solid transparent;border-radius:6px;color:#fff;font-size:13px;font-weight:600;padding:5px 8px;max-width:230px;width:auto;min-width:90px;font-family:inherit;outline:none;transition:background .15s,border-color .15s}
+#doc-title::placeholder{color:#7a7ab0;font-weight:400}
+#doc-title:placeholder-shown{background:#1e1e4a;border-color:#3a3a6a}
+#doc-title:focus{background:#0d0d24;border-color:#6a6aaa}
 .menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
 .menu-sep.menu-push{width:3px;height:30px;margin:0 9px;background:#7a5aff;border-radius:2px;box-shadow:0 0 6px rgba(122,90,255,.45)} /* the major divider splitting 編集 | 保存 groups */
 .mbtn.save-grp{background:#202a4d;border-color:#46568c} /* 保存/ファイル/アカウント group — distinct tint from the edit tools */
@@ -208,6 +213,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   #menubar .menu-sep{display:none}
   #app-title{font-size:16px;padding:2px 2px 8px;border-bottom:1px solid #2a2a5a;width:100%}
   #menubar .mbtn,#menubar #bg-sel{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
+  #doc-title{width:100%;max-width:none;min-height:44px;font-size:15px;background:#1e1e4a;border-color:#3a3a6a} /* always boxed in the drawer */
   #cloud-status{padding:2px 4px}
   /* sidebar uses the SAME slide-in drawer UI as the menu (same width / style / animation) */
   #sidebar-right{display:none}
@@ -327,6 +333,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 
 <div id="menubar">
   <span id="app-title">🔍 ClueBoard</span>
+  <input id="doc-title" placeholder="タイトル" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-undo" title="元に戻す (Ctrl+Z)" disabled>↶ 戻る</button>
   <button class="mbtn" id="btn-redo" title="やり直し (Ctrl+Y)" disabled>↷ 進む</button>
@@ -421,7 +428,7 @@ const S = {
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
-  currentBoard:'main', questions:[], boards:{}, cardOrder:[],
+  currentBoard:'main', questions:[], boards:{}, cardOrder:[], docTitle:'',
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
@@ -2675,6 +2682,7 @@ function saveFile(){
     title:'ClueBoard',
     version:2,
     bg:S.bg,showDesc:S.showDesc,
+    docTitle:S.docTitle,
     currentBoard:S.currentBoard,
     layers:S.layers,
     questions:S.questions,
@@ -2692,10 +2700,18 @@ function saveFile(){
   const blob=new Blob([JSON.stringify(data,null,2)],{type:'application/json'});
   const a=document.createElement('a');
   a.href=URL.createObjectURL(blob);
-  a.download='relationship_'+(new Date().toISOString().slice(0,10))+'.json';
+  const safe=(S.docTitle||'').trim().replace(/[\\/:*?"<>|\n\r\t]/g,'_').replace(/\s+/g,'_').slice(0,80);
+  a.download=(safe||('relationship_'+(new Date().toISOString().slice(0,10))))+'.json';
   a.click();URL.revokeObjectURL(a.href);
 }
 document.getElementById('btn-save').onclick=saveFile;
+// document title (top-left) → kept in S.docTitle and used as the save filename
+(function wireDocTitle(){
+  const inp=document.getElementById('doc-title'); if(!inp)return;
+  inp.value=S.docTitle||'';
+  inp.addEventListener('input',()=>{ S.docTitle=inp.value; autosaveLocalDebounced(); cloudSaveDebounced(); });
+  inp.addEventListener('keydown',e=>{ if(e.key==='Enter')inp.blur(); }); // Enter confirms (shows just text)
+})();
 
 // Apply a saved document object to the app state (shared by file-load and cloud-load)
 function applyDocData(d){
@@ -2704,6 +2720,8 @@ function applyDocData(d){
   S.showDesc=d.showDesc!==false;
   S.clues=d.clues||[];
   S.cardOrder=d.cardOrder||[];
+  S.docTitle=d.docTitle||'';
+  const _dt=document.getElementById('doc-title'); if(_dt)_dt.value=S.docTitle;
   S.showMain=d.showMain!==false;
   S.showCards=d.showCards!==false; S.showLayers=d.showLayers!==false;
   S.showQuestions=d.showQuestions!==false;
@@ -2730,7 +2748,7 @@ function applyDocData(d){
 function currentDocData(){
   saveActiveBoard();
   return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,layers:S.layers,
-    questions:S.questions,clues:S.clues,cardOrder:S.cardOrder,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
+    questions:S.questions,clues:S.clues,cardOrder:S.cardOrder,docTitle:S.docTitle,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
 document.getElementById('btn-load').onclick=()=>document.getElementById('file-input').click();
