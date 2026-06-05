@@ -21,6 +21,16 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 #doc-title:placeholder-shown{background:#1e1e4a;border-color:#5a5a9a}
 #doc-title:hover:not(:focus){border-color:#3a3a6a}
 #doc-title:focus{background:#0d0d24;border-color:#7a7aff;box-shadow:0 0 0 2px rgba(122,122,255,.18)}
+/* file / account slide-in panel (☰ メニュー) */
+#file-menu{position:fixed;top:0;right:0;bottom:0;width:min(290px,84vw);z-index:540;
+  background:linear-gradient(180deg,rgba(20,20,46,.98),rgba(11,11,24,.98));border-left:2px solid #2a2a5a;
+  box-shadow:-6px 0 26px rgba(0,0,0,.55);padding:54px 16px 22px;display:flex;flex-direction:column;gap:11px;
+  overflow-y:auto;transform:translateX(100%);transition:transform .25s ease}
+body.filemenu-open #file-menu{transform:translateX(0)}
+#file-menu .fm-title{font-size:12px;color:#9a9ad0;font-weight:bold;letter-spacing:.06em;padding-bottom:6px;border-bottom:1px solid #2a2a5a}
+#file-menu .mbtn{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
+#file-menu #cloud-status{font-size:13px;color:#8a8ac0;padding:2px 4px;text-align:center;white-space:normal}
+body.filemenu-open #menu-backdrop{display:block}
 .menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
 .menu-sep.menu-push{width:3px;height:30px;margin:0 9px;background:#7a5aff;border-radius:2px;box-shadow:0 0 6px rgba(122,90,255,.45)} /* the major divider splitting 編集 | 保存 groups */
 .mbtn.save-grp{background:#202a4d;border-color:#46568c} /* 保存/ファイル/アカウント group — distinct tint from the edit tools */
@@ -353,14 +363,20 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
   <div class="menu-sep menu-push"></div>
+  <button class="mbtn" id="btn-filemenu" title="保存・読み込み・共有・ログイン">☰ メニュー</button>
+  <div class="menu-sep"></div>
+  <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
+</div>
+
+<!-- file / account slide-in panel (opened by ☰ メニュー) -->
+<div id="file-menu">
+  <div class="fm-title">ファイル / アカウント</div>
   <button class="mbtn save-grp" id="btn-save">💾 保存</button>
   <button class="mbtn save-grp" id="btn-load">📂 読み込み</button>
+  <input type="file" id="file-input" style="display:none" accept=".json">
   <button class="mbtn save-grp" id="btn-login">👤 Googleでログイン</button>
   <button class="mbtn save-grp" id="btn-share" title="共有リンクをコピー" disabled>🔗 共有</button>
   <span id="cloud-status"></span>
-  <input type="file" id="file-input" style="display:none" accept=".json">
-  <div class="menu-sep"></div>
-  <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
 
 <div id="content">
@@ -2586,11 +2602,14 @@ window.addEventListener('resize',()=>{clearTimeout(_rzTimer);_rzTimer=setTimeout
 document.getElementById('mobile-sb-toggle').onclick=()=>{document.body.classList.remove('menu-open');document.body.classList.toggle('sb-open');};
 // mobile: menu drawer (slide-in from left)
 document.getElementById('mobile-menu-toggle').onclick=()=>{document.body.classList.remove('sb-open');document.body.classList.toggle('menu-open');};
-document.getElementById('menu-backdrop').onclick=()=>document.body.classList.remove('menu-open','sb-open');
+document.getElementById('menu-backdrop').onclick=()=>document.body.classList.remove('menu-open','sb-open','filemenu-open');
 // tapping an action button closes the menu drawer
 document.getElementById('menubar').addEventListener('click',e=>{
   if(e.target.closest('.mbtn'))document.body.classList.remove('menu-open');
 });
+// ☰ メニュー → file / account slide-in panel (保存・読み込み・共有・保存済み・ログイン)
+document.getElementById('btn-filemenu').onclick=()=>{document.body.classList.remove('menu-open','sb-open');document.body.classList.toggle('filemenu-open');};
+document.getElementById('file-menu').addEventListener('click',e=>{ if(e.target.closest('.mbtn'))document.body.classList.remove('filemenu-open'); });
 // tapping a navigation item (card/layer/clue/疑問) closes the sidebar drawer so the canvas is visible
 document.getElementById('sidebar').addEventListener('click',e=>{
   if(!isMobileView())return;
