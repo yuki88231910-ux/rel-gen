@@ -362,10 +362,8 @@ body.filemenu-open #menu-backdrop{display:block}
   <button class="mbtn" id="btn-align" title="複数選択(Ctrl+クリック)した要素を整列" disabled>⬓ 配置 ▾</button>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
-  <div class="menu-sep menu-push"></div>
+  <button class="mbtn save-grp danger" id="btn-del-all" style="margin-left:auto">🗑 すべて削除</button>
   <button class="mbtn" id="btn-filemenu" title="保存・読み込み・共有・ログイン">☰ メニュー</button>
-  <div class="menu-sep"></div>
-  <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
 </div>
 
 <!-- file / account slide-in panel (opened by ☰ メニュー) -->
@@ -800,6 +798,29 @@ function deleteQuestion(id){
   if(S.currentBoard===id){S.currentBoard='main';loadActiveBoard();render();applyTf();}
   renderSidebar();scheduleCommit(); // undoable content change
 }
+// boards where this 疑問's link-node card has been placed (so we can offer "go to the card")
+function questionLinkBoards(qid){
+  saveActiveBoard();
+  const boards=[];
+  S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)).forEach(bid=>{ if(bid===qid)return; const bd=S.boards[bid]; if(bd&&bd.cards&&bd.cards.some(c=>c.linkBoard===qid))boards.push(bid); });
+  return boards;
+}
+function jumpToQuestionCard(qid, boardId){
+  if(S.currentBoard!==boardId)switchBoard(boardId);
+  const c=S.cards.find(x=>x.linkBoard===qid);
+  if(c)focusCard(c.id);
+}
+// click a 疑問: if its card is placed somewhere, choose "edit the diagram" vs "go to the card's layer"; else edit directly
+function chooseQuestionAction(qid, title){
+  const boards=questionLinkBoards(qid);
+  if(!boards.length){ switchBoard(qid); return; } // no card placed → straight to editing the diagram
+  const opts=`<button type="button" class="btn btn-p qa-edit" style="display:block;width:100%;text-align:left;margin:5px 0">❓ この疑問の図を編集</button>`+
+    boards.map(bid=>`<button type="button" class="btn btn-s qa-go" data-id="${esc(bid)}" style="display:block;width:100%;text-align:left;margin:5px 0">${boardIconOf(bid)} ${esc(boardLabelOf(bid))} のカードへ移動</button>`).join('');
+  showModal(`<h2>❓ ${esc(title)}</h2><div class="fg" style="color:#cfcfe6;font-size:13px">どうしますか？</div><div class="fg">${opts}</div><div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelector('.qa-edit').onclick=()=>{hideModal();switchBoard(qid);};
+    document.querySelectorAll('.qa-go').forEach(b=>b.onclick=()=>{const bid=b.dataset.id;hideModal();jumpToQuestionCard(qid,bid);});
+  });
+}
 function makeBoardItem(en){
   const it=document.createElement('div');
   it.className='q-item'+(en.id===S.currentBoard?' active':'');
@@ -831,7 +852,7 @@ function makeBoardItem(en){
       moveQuestion(_dragQId,en.id,after);
     });
   }
-  it.onclick=()=>switchBoard(en.id);
+  it.onclick=()=> en.isQ ? chooseQuestionAction(en.id,en.title) : switchBoard(en.id);
   return it;
 }
 let _dragQId=null;
@@ -1043,13 +1064,13 @@ function cardEntries(){
   if(!contentBoards.includes(S.currentBoard))contentBoards.push(S.currentBoard);
   const uniq=new Map();
   contentBoards.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
+    bd.cards.forEach(c=>{ if(c.fromClue||c.linkBoard||clueNames.has((c.name||'').trim()))return; // 手がかり/疑問リンクノードは出さない
       const key=(c.name||'').trim()||(' '+c.id);
       if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{key,card:c,boardId:bid,boards:[]}); });
   });
   // jump targets: every layer + 疑問 board that holds a same-named card
   S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)).forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(c.fromClue||clueNames.has((c.name||'').trim()))return;
+    bd.cards.forEach(c=>{ if(c.fromClue||c.linkBoard||clueNames.has((c.name||'').trim()))return;
       const e=uniq.get((c.name||'').trim()||(' '+c.id)); if(e&&!e.boards.includes(bid))e.boards.push(bid); });
   });
   const entries=[...uniq.values()], order=S.cardOrder||[];
