@@ -12,7 +12,7 @@
 body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;overflow:hidden;height:100vh;display:flex;flex-direction:column;user-select:none}
 
 /* ── MENUBAR ── */
-#menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:6px 12px;display:flex;align-items:center;gap:8px;flex-shrink:0;z-index:200;flex-wrap:wrap}
+#menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:5px 10px;display:flex;align-items:center;gap:6px;flex-shrink:0;z-index:200;flex-wrap:wrap}
 #app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
 .menu-break{flex-basis:100%;width:100%;height:0;margin:0;padding:0} /* forces the title onto its own row */
 /* document title: prominent. empty (placeholder shown) or focused → boxed input; filled & resting → just big text */
@@ -31,17 +31,17 @@ body.filemenu-open #file-menu{transform:translateX(0)}
 #file-menu .mbtn{width:100%;min-height:48px;font-size:15px;text-align:left;padding:10px 14px}
 #file-menu #cloud-status{font-size:13px;color:#8a8ac0;padding:2px 4px;text-align:center;white-space:normal}
 body.filemenu-open #menu-backdrop{display:block}
-.menu-sep{width:1px;height:26px;background:#2a2a5a;flex-shrink:0}
+.menu-sep{width:1px;height:22px;background:#2a2a5a;flex-shrink:0}
 .menu-sep.menu-push{width:3px;height:30px;margin:0 9px;background:#7a5aff;border-radius:2px;box-shadow:0 0 6px rgba(122,90,255,.45)} /* the major divider splitting 編集 | 保存 groups */
 .mbtn.save-grp{background:#202a4d;border-color:#46568c} /* 保存/ファイル/アカウント group — distinct tint from the edit tools */
 .mbtn.save-grp:hover{background:#2c3a66;border-color:#6a7ab0}
-.mbtn{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 11px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;font-family:inherit}
+.mbtn{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:4px 8px;border-radius:6px;cursor:pointer;font-size:12px;transition:all .15s;white-space:nowrap;font-family:inherit}
 .mbtn:hover{background:#2a2a6a;border-color:#6a6aaa}
 .mbtn.active{background:#6a3aaa;border-color:#9a6aff;color:#fff}
 .mbtn.danger:hover{background:#8b2020;border-color:#ff5555;color:#fff}
 .mbtn:disabled{opacity:.35;cursor:default;background:#15152e}
 .mbtn:disabled:hover{background:#15152e;border-color:#3a3a6a}
-#bg-sel{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:5px 8px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
+#bg-sel{background:#1e1e4a;border:1px solid #3a3a6a;color:#d0d0ff;padding:4px 6px;border-radius:6px;font-size:12px;cursor:pointer;font-family:inherit}
 #bg-sel option{background:#1e1e4a}
 #btn-login.in{background:#1e4a2e;border-color:#3a9a5a}
 #cloud-status{font-size:11px;color:#8a8ac0;white-space:nowrap;align-self:center}
