@@ -52,9 +52,9 @@ body.filemenu-open #menu-backdrop{display:block}
 .card,.branch,.subtitle,.imgel,.desc-box,.card-add-btn,.q-item{touch-action:none}
 #canvas-inner{position:absolute;top:0;left:0;transform-origin:0 0}
 /* sidebar = floating HUD over the canvas; only the cards capture clicks, the empty area is click-through */
-#sidebar{position:absolute;left:0;top:0;bottom:0;width:236px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
-#sidebar-right{position:absolute;right:0;top:0;bottom:0;width:236px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
-#q-list,#q-list-right{padding:10px 8px;pointer-events:none;overflow:visible}
+#sidebar{position:absolute;left:0;top:0;bottom:0;width:272px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
+#sidebar-right{position:absolute;right:0;top:0;bottom:0;width:272px;display:flex;flex-direction:column;z-index:150;pointer-events:none;overflow:visible}
+#q-list,#q-list-right{padding:10px 8px 28px;pointer-events:auto;overflow-y:auto;flex:1;min-height:0;overscroll-behavior:contain}
 .q-item{display:flex;align-items:center;gap:8px;padding:9px 10px;margin-bottom:6px;border-radius:8px;background:#16162e;border:1px solid #2a2a5a;cursor:pointer;color:#d0d0ff;font-size:13px;transition:background .15s,border-color .15s;pointer-events:auto;box-shadow:0 2px 10px rgba(0,0,0,.4)}
 .q-item:hover{background:#1e1e44;border-color:#4a4a8a}
 .q-item.active{background:#2a1e55;border-color:#9a6aff;color:#fff}
@@ -104,7 +104,11 @@ body.filemenu-open #menu-backdrop{display:block}
 .card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);word-break:break-all}
 .card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;word-break:break-all}
 /* unified draggable description box — always horizontal, linked by a dotted line */
-.desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;max-width:240px;white-space:pre-wrap;word-break:break-word;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)}
+.desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;white-space:pre;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)} /* 改行は明示(\n=Ctrl+Enter)のみ。自動折返しせず横に伸びる */
+.desc-box.hovonly{display:none} /* 解説OFF時はホバーでだけ表示 */
+.desc-box.hovonly.hov{display:block;z-index:60}
+#svg-layer line.hovonly{visibility:hidden}
+#svg-layer line.hovonly.hov{visibility:visible}
 .desc-box:hover{border-color:rgba(190,170,255,.9);background:rgba(16,16,40,.97)}
 .desc-box.dragging{border-style:solid;border-color:#c8a8ff}
 .layer-tag{font-weight:bold;cursor:pointer;pointer-events:auto;text-decoration:underline;text-underline-offset:2px}
@@ -443,13 +447,21 @@ const S = {
   mouse:{x:0,y:0},   // canvas coords
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
-  currentBoard:'main', questions:[], boards:{}, cardOrder:[], docTitle:'',
+  currentBoard:'main', questions:[], boards:{}, cardOrder:[], docTitle:'', cardFilter:'all',
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
   cards:[], arrows:[], branches:[], zones:[], subtitles:[], images:[]
 };
 const LAYER_COLORS=['#ff6b6b','#4dabf7','#51cf66','#ffd43b','#cc5de8','#ff922b','#20c997','#f06595'];
+// カードの属性（人物/手がかり/場所/疑問・伏線）。色は属性で自動的に決まる。
+const ATTRS={
+  person:  {label:'人物',     color:'#4dabf7', icon:'👤', defName:'新しい人物'},
+  clue:    {label:'手がかり', color:'#ffa94d', icon:'🔍', defName:'新しい手がかり'},
+  place:   {label:'場所',     color:'#51cf66', icon:'📍', defName:'新しい場所'},
+  question:{label:'疑問・伏線',color:'#cc5de8', icon:'❓'}
+};
+function attrOf(c){return (c&&c.attr)|| (c&&c.linkBoard?'question': (c&&c.fromClue?'clue':'person'));}
 
 let _uid=0;
 const uid=()=>'n'+(++_uid)+'_'+Math.random().toString(36).slice(2,5);
@@ -684,7 +696,7 @@ function chooseKeyBoard(name, boardIds){ // when a key spans multiple layers / �
 function makeKeyItem(k){
   const it=document.createElement('div');it.className='q-item';
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent='🔑';ico.style.color='#f5c518';
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=k.name;ti.title=k.name+'（キー）';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=k.name;ti.title=k.name+'（キー）';fitTitle(ti,k.name);
   it.appendChild(ico);it.appendChild(ti);
   if(k.boards.length>1){const c=document.createElement('span');c.style.cssText='margin-left:auto;font-size:11px;font-weight:bold;color:#f5c518;opacity:.9;flex:0 0 auto';c.textContent='×'+k.boards.length;c.title=k.boards.length+'箇所（レイヤー/疑問）にあります';it.appendChild(c);}
   it.onclick=()=>{ k.boards.length>1 ? chooseKeyBoard(k.name,k.boards) : jumpToKey(k.name,k.boards[0]); };
@@ -726,11 +738,19 @@ function addLayer(name){
 }
 function renameLayer(id){
   const ly=layerById(id);if(!ly)return;
-  showModal(`<h2>レイヤー名</h2><div class="fg"><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
-    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">保存</button></div>`,()=>{
+  showModal(`<h2>レイヤー名 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2><div class="fg"><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
+    <div class="mact"><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();inp.select();
-    const ok=()=>{ly.name=(inp.value||'').trim()||ly.name;hideModal();render();renderSidebar();scheduleCommit();};
-    document.getElementById('ly-ok').onclick=ok; inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+    inp.addEventListener('input',()=>{
+      const nv=(inp.value||'').trim(); if(!nv||nv===ly.name)return;
+      const oldTag='[['+ly.name+']]', newTag='[['+nv+']]';
+      // 解説内のレイヤータグも追従して書き換える（全ボード＋手がかり）
+      saveActiveBoard();
+      Object.values(S.boards).forEach(bd=>['cards','branches','arrows','images'].forEach(k=>(bd[k]||[]).forEach(o=>{ if(o.desc&&o.desc.includes(oldTag))o.desc=o.desc.split(oldTag).join(newTag); })));
+      S.clues.forEach(c=>{ if(c.desc&&c.desc.includes(oldTag))c.desc=c.desc.split(oldTag).join(newTag); });
+      ly.name=nv; render(); renderSidebar(); scheduleCommit();
+    });
+    inp.onkeydown=e=>{if(e.key==='Enter')hideModal();};
   });
 }
 function deleteLayer(id){
@@ -747,6 +767,28 @@ function jumpToLayer(layerId,cardName){
   const ly=layerById(layerId);if(!ly)return;
   if(S.currentBoard!==ly.id)switchBoard(ly.id);
   if(cardName){ const c=S.cards.find(x=>(x.name||'').trim()===(cardName||'').trim()); if(c)focusCard(c.id); }
+}
+// 配置されたレイヤーのタグを解説に自動挿入（既にあれば何もしない）
+function autoLayerTag(card){
+  const ly=layerById(S.currentBoard); if(!ly||!card)return;
+  const tag='[['+ly.name+']]';
+  if((card.desc||'').includes(tag))return;
+  card.desc=((card.desc||'').trim()? card.desc+' ':'')+tag;
+}
+// 解説は「同じカード（同名）」で全レイヤー・全疑問ボード＋手がかりパレットに共有される
+function syncCardByName(card){
+  const nm=(card.name||'').trim(); if(!nm)return;
+  saveActiveBoard();
+  Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if(c!==card&&(c.name||'').trim()===nm)c.desc=card.desc; }));
+  S.clues.forEach(cl=>{ if((cl.name||'').trim()===nm)cl.desc=card.desc; });
+}
+// 同名カードを全ボード横断で改名（カードの同一性は名前で繋がっているため）
+function renameCardEverywhere(oldName,newName){
+  const o=(oldName||'').trim(), n=(newName||'').trim();
+  if(!o||o===n)return;
+  saveActiveBoard();
+  Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if((c.name||'').trim()===o)c.name=newName; }));
+  S.clues.forEach(cl=>{ if((cl.name||'').trim()===o)cl.name=newName; });
 }
 function switchBoard(id){
   if(id===S.currentBoard)return;
@@ -780,16 +822,14 @@ function addQuestion(){
 function renameQuestion(id){
   const q=S.questions.find(x=>x.id===id);if(!q)return;
   showModal(`
-    <h2>疑問のタイトル</h2>
+    <h2>疑問のタイトル <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2>
     <div class="fg"><input type="text" id="q-title" value="${esc(q.title)}"></div>
     <div class="mact">
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="q-ok">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>`,()=>{
     const inp=document.getElementById('q-title');inp.focus();inp.select();
-    const ok=()=>{q.title=(inp.value||'').trim()||'疑問';hideModal();renderSidebar();};
-    document.getElementById('q-ok').onclick=ok;
-    inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+    inp.addEventListener('input',()=>{ q.title=(inp.value||'').trim()||'疑問'; renderSidebar(); scheduleCommit(); });
+    inp.onkeydown=e=>{if(e.key==='Enter')hideModal();};
   });
 }
 function deleteQuestion(id){
@@ -825,7 +865,7 @@ function makeBoardItem(en){
   const it=document.createElement('div');
   it.className='q-item'+(en.id===S.currentBoard?' active':'');
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent=en.ico;
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.title;ti.title=en.title;
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.title;ti.title=en.title;fitTitle(ti,en.title);
   it.appendChild(ico);it.appendChild(ti);
   if(en.isQ){
     const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
@@ -909,12 +949,20 @@ function addItemEl(label,title,onClick){
   const a=document.createElement('div');a.className='q-item q-add-item';a.textContent='＋';a.title=title;a.onclick=onClick;return a;
 }
 function keyTagEl(){const s=document.createElement('span');s.textContent='🔑';s.title='キー';s.style.cssText='flex:0 0 auto;font-size:13px;margin:0 2px';return s;}
+// 名前が長い場合はフォントを自動縮小して全文表示（最小8px、それでも収まらなければ折返し）
+function fitTitle(ti,name){
+  const len=(name||'').length;
+  if(len<=14)return;
+  const fs=Math.max(8,Math.min(13,Math.floor(186/len)));
+  ti.style.fontSize=fs+'px';
+  if(fs<=8){ ti.style.whiteSpace='normal'; ti.style.lineHeight='1.25'; ti.style.wordBreak='break-all'; }
+}
 function makeClueItem(c){
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.clueId=c.id;
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'手がかり';ti.title=c.name||'';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'手がかり';ti.title=c.name||'';fitTitle(ti,c.name);
   const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
   del.onclick=e=>{e.stopPropagation();if(confirm('この手がかりを削除しますか？'))deleteClue(c.id);};
   it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());it.appendChild(del);
@@ -931,7 +979,7 @@ let _dragCardSrc=null; // {card, fromBoard} while dragging a card from the sideb
 function makeLayerItem(l){ // l: {id, name, color} — each layer is its own canvas (board)
   const it=document.createElement('div');it.className='q-item'+(S.currentBoard===l.id?' active':'');
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color=l.color||'#9aa3b2';
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=l.name;ti.title=l.name;
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=l.name;ti.title=l.name;fitTitle(ti,l.name);
   it.appendChild(ico);it.appendChild(ti);
   const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
   del.onclick=e=>{e.stopPropagation();
@@ -961,7 +1009,7 @@ function makeCardListItem(c, boardId, boards){
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
   else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
-  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';
+  const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';fitTitle(ti,c.name);
   it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());
   // click → jump to the layer/疑問 the card is on (choose when it's on several), like the 疑問・伏線 list
   it.onclick=()=>{ const bs=(boards&&boards.length)?boards:[fromBoard]; const nm=(c.name||'').trim();
@@ -983,13 +1031,16 @@ function placeCardOnCanvas(srcCard, fromBoard, x, y){
   else {
     tgt=S.cards.find(c=>(c.name||'').trim()===(srcCard.name||'').trim() && (srcCard.name||'').trim()!=='');
     if(!tgt){
+      // 同一カードとして配置：解説・属性も共有してコピー
       tgt={id:uid(),x:0,y:0,w:srcCard.w||150,name:srcCard.name,sub:srcCard.sub||'',color:srcCard.color,
-        image:srcCard.image||null,icon:srcCard.icon,shape:srcCard.shape||'rect',desc:'',textScale:srcCard.textScale||1,
-        key:srcCard.key||false,zoneIds:[],linkBoard:srcCard.linkBoard};
+        image:srcCard.image||null,icon:srcCard.icon,shape:srcCard.shape||'rect',desc:srcCard.desc||'',textScale:srcCard.textScale||1,
+        key:srcCard.key||false,zoneIds:[],linkBoard:srcCard.linkBoard,attr:srcCard.attr};
       S.cards.push(tgt); created=true;
     }
   }
   tgt.x=clampW(x-cardEffW(tgt)/2); tgt.y=clampW(y-cardEffH(tgt)/2);
+  autoLayerTag(tgt);          // このレイヤーのタグを解説に自動挿入
+  syncCardByName(tgt);        // 解説を同名カード全体に共有
   S.selection=[tgt.id];
   if(created)renderAll(); else { render(); scheduleCommit(); }
 }
@@ -997,9 +1048,9 @@ function placeCardOnCanvas(srcCard, fromBoard, x, y){
 function placeQuestionOnCanvas(qid,x,y){
   const q=S.questions.find(q=>q.id===qid); if(!q)return;
   const w=170;
-  const card={id:uid(),x:clampW(x-w/2),y:clampW(y-44),w,name:q.title||'疑問',sub:'',color:'#e0901e',
-    image:null,icon:'❓',shape:'rect',desc:'',textScale:1,key:false,zoneIds:[],linkBoard:qid};
-  S.cards.push(card);S.selection=[card.id];renderAll();
+  const card={id:uid(),x:clampW(x-w/2),y:clampW(y-44),w,name:q.title||'疑問',sub:'',color:ATTRS.question.color,
+    image:null,icon:'❓',shape:'rect',desc:'',textScale:1,key:false,zoneIds:[],linkBoard:qid,attr:'question'};
+  S.cards.push(card);autoLayerTag(card);S.selection=[card.id];renderAll();
 }
 function openLinkBoard(boardId){
   if(boardId&&S.boards[boardId])switchBoard(boardId);
@@ -1058,29 +1109,56 @@ function buildClueSection(t){
 // each entry also records `boards` = every layer/疑問 the card appears on (for jump targets).
 function cardEntries(){
   saveActiveBoard(); // sync the live current canvas into S.boards first
-  const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean)); // 手がかり由来/同名は除外
   // contents: layers + the current board (so a 疑問's cards show while it's open)
   const contentBoards=S.layers.map(l=>l.id);
   if(!contentBoards.includes(S.currentBoard))contentBoards.push(S.currentBoard);
   const uniq=new Map();
   contentBoards.forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(c.fromClue||c.linkBoard||clueNames.has((c.name||'').trim()))return; // 手がかり/疑問リンクノードは出さない
+    bd.cards.forEach(c=>{ if(c.linkBoard)return; // 疑問リンクノードは疑問の行が代表するため出さない
       const key=(c.name||'').trim()||(' '+c.id);
       if(!uniq.has(key)||bid===S.currentBoard)uniq.set(key,{key,card:c,boardId:bid,boards:[]}); });
   });
   // jump targets: every layer + 疑問 board that holds a same-named card
   S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)).forEach(bid=>{ const bd=S.boards[bid]; if(!bd||!bd.cards)return;
-    bd.cards.forEach(c=>{ if(c.fromClue||c.linkBoard||clueNames.has((c.name||'').trim()))return;
+    bd.cards.forEach(c=>{ if(c.linkBoard)return;
       const e=uniq.get((c.name||'').trim()||(' '+c.id)); if(e&&!e.boards.includes(bid))e.boards.push(bid); });
   });
   const entries=[...uniq.values()], order=S.cardOrder||[];
   entries.sort((a,b)=>{ let ia=order.indexOf(a.key), ib=order.indexOf(b.key); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
   return entries;
 }
-function buildCardSection(t){
+// 属性フィルタチップ（全/人物/手がかり/場所/疑問伏線）
+function attrChipsRow(){
+  const w=document.createElement('div');
+  w.style.cssText='display:flex;flex-wrap:wrap;gap:4px;padding:2px 2px 7px;pointer-events:auto';
+  const mk=(k,label,color)=>{
+    const on=(S.cardFilter||'all')===k;
+    const b=document.createElement('button');b.type='button';b.textContent=label;
+    b.style.cssText='font-size:10.5px;padding:3px 9px;border-radius:11px;cursor:pointer;font-family:inherit;border:1px solid '+(color||'#7a7ab0')+';background:'+(on?(color||'#7a7ab0'):'transparent')+';color:'+(on?'#101024':'#cfcfe6')+';font-weight:'+(on?'700':'400');
+    b.onclick=()=>{S.cardFilter=k;renderSidebar();};
+    return b;
+  };
+  w.appendChild(mk('all','全',null));
+  Object.entries(ATTRS).forEach(([k,a])=>w.appendChild(mk(k,a.label,a.color)));
+  return w;
+}
+// 統一カードセクション: 疑問・伏線 / 人物 / 手がかり / 場所 をひとつの一覧に（属性で絞り込み可）
+function buildUnifiedSection(t){
   t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
   if(!S.showCards)return;
-  cardEntries().forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)));
+  t.appendChild(attrChipsRow());
+  t.appendChild(addItemEl('＋','カードを追加（属性を選択）',addCard));
+  const f=S.cardFilter||'all';
+  if(f==='all'||f==='question'){
+    S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
+    collectKeyCards().forEach(k=>t.appendChild(makeKeyItem(k))); // 🔑（手がかり以外のキー）
+  }
+  cardEntries().forEach(v=>{ const at=attrOf(v.card); if(f==='all'||f===at)t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)); });
+  if(f==='all'||f==='clue'){
+    // まだどのボードにも置かれていない手がかり（パレット）も一覧に出す
+    const placed=new Set(); Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>placed.add((c.name||'').trim())));
+    S.clues.forEach(c=>{ if(!placed.has((c.name||'').trim()))t.appendChild(makeClueItem(c)); });
+  }
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
@@ -1088,17 +1166,13 @@ function renderSidebar(){
   L.innerHTML='';R.innerHTML='';
   const mobile=window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
   if(mobile){
-    // one left panel, order: レイヤー → 疑問 → 手がかり → カード
+    // one left drawer: レイヤー → 統一カード一覧
     buildLayerSection(L);
-    buildQuestionSection(L);
-    buildClueSection(L);
-    buildCardSection(L);
+    buildUnifiedSection(L);
   } else {
-    // desktop: left = 疑問, right = レイヤー / カード / 手がかり
-    buildQuestionSection(L);
+    // desktop: 右=時系列レイヤーのみ / 左=統一カード一覧（人物・手がかり・場所・疑問伏線）
+    buildUnifiedSection(L);
     buildLayerSection(R);
-    buildCardSection(R);
-    buildClueSection(R);
   }
 }
 let _dragClueId=null;
@@ -1113,8 +1187,10 @@ function placeClueOnCanvas(clueId,x,y){
   const nm=(c.name||'').trim();
   // a key belongs to the entity → inherit it from the clue (or any same-named key card already on a layer)
   const isKey = !!c.key || (!!nm && Object.values(S.boards).some(bd=>(bd.cards||[]).some(cc=>(cc.name||'').trim()===nm&&cc.key)));
-  S.cards.push({id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
-    color:c.color||'#9b59b6',image:c.image||null,icon:c.icon||'✦',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true,key:isKey});
+  const placed={id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
+    color:c.color||'#ffa94d',image:c.image||null,icon:c.icon||'🔍',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true,key:true,attr:'clue'};
+  S.cards.push(placed);
+  autoLayerTag(placed); syncCardByName(placed);
   renderAll();
 }
 function openClueEditor(id){
@@ -1129,22 +1205,29 @@ function openClueEditor(id){
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px"><label style="font-size:11px;color:#888">カスタム絵文字</label><input type="text" id="cl-cicon" value="${esc(c.icon)}" style="width:60px;text-align:center;font-size:18px"></div></div>
     <div class="fg"><label>画像</label><div style="display:flex;gap:8px;align-items:center"><button class="btn btn-s" id="cl-imgbtn">📁 画像を選択</button>${c.image?'<button class="btn btn-s" id="cl-clrimg">🗑 削除</button><img src="'+c.image+'" style="height:40px;border-radius:4px">':''}</div></div>
     <div class="fg"><label>幅 (px)</label><input type="number" id="cl-w" value="${c.w||150}" min="80" max="600" style="width:80px"></div>
-    <div class="fg"><label>解説</label><textarea id="cl-desc">${esc(c.desc||'')}</textarea></div>
-    <div class="mact"><button class="btn btn-d" id="cl-del">🗑 削除</button><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="cl-save">保存</button></div>
+    <div class="fg"><label>解説（同名カードと共有・Ctrl+Enterで改行）</label><textarea id="cl-desc">${esc(c.desc||'')}</textarea></div>
+    <div class="mact"><button class="btn btn-d" id="cl-del">🗑 削除</button><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>
   `,()=>{
-    buildIconGrid('cl-icon-grid',c.icon,v=>document.getElementById('cl-cicon').value=v);
-    document.querySelectorAll('.color-preset').forEach(p=>p.addEventListener('click',()=>{document.getElementById('cl-color').value=p.dataset.col;}));
+    const $=x=>document.getElementById(x);
+    buildIconGrid('cl-icon-grid',c.icon,v=>{$('cl-cicon').value=v;c.icon=v;renderAll();scheduleCommit();});
+    // 入力は即時反映（自動保存）。名称変更は同名カードにも伝搬、解説も共有。
+    let prevName=c.name;
+    $('cl-name').addEventListener('input',()=>{ const nv=$('cl-name').value; renameCardEverywhere(prevName,nv); c.name=nv; prevName=nv; renderAll(); scheduleCommit(); });
+    $('cl-sub').addEventListener('input',()=>{ c.sub=$('cl-sub').value; scheduleCommit(); });
+    $('cl-color').addEventListener('input',()=>{ c.color=$('cl-color').value; renderAll(); scheduleCommit(); });
+    $('cl-shape').onchange=()=>{ c.shape=$('cl-shape').value; scheduleCommit(); };
+    $('cl-cicon').addEventListener('input',()=>{ c.icon=$('cl-cicon').value||'🔍'; renderAll(); scheduleCommit(); });
+    $('cl-w').addEventListener('input',()=>{ c.w=parseInt($('cl-w').value)||150; scheduleCommit(); });
+    $('cl-desc').addEventListener('input',()=>{ c.desc=$('cl-desc').value;
+      const nm=(c.name||'').trim();
+      if(nm){ saveActiveBoard(); Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(cc=>{ if((cc.name||'').trim()===nm)cc.desc=c.desc; })); }
+      render(); scheduleCommit(); });
+    document.querySelectorAll('.color-preset').forEach(p=>p.addEventListener('click',()=>{ $('cl-color').value=p.dataset.col; c.color=p.dataset.col; renderAll(); scheduleCommit(); }));
     const imgInp=document.createElement('input');imgInp.type='file';imgInp.accept='image/*';
-    imgInp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{c.image=ev.target.result;openClueEditor(id);};r.readAsDataURL(f);};
-    document.getElementById('cl-imgbtn').onclick=()=>imgInp.click();
-    const clr=document.getElementById('cl-clrimg');if(clr)clr.onclick=()=>{c.image=null;openClueEditor(id);};
-    document.getElementById('cl-save').onclick=()=>{
-      c.name=document.getElementById('cl-name').value;c.sub=document.getElementById('cl-sub').value;
-      c.color=document.getElementById('cl-color').value;c.shape=document.getElementById('cl-shape').value;
-      c.icon=document.getElementById('cl-cicon').value||'✦';c.w=parseInt(document.getElementById('cl-w').value)||150;
-      c.desc=document.getElementById('cl-desc').value;hideModal();renderSidebar();
-    };
-    document.getElementById('cl-del').onclick=()=>{deleteClue(id);hideModal();};
+    imgInp.onchange=e=>{const f=e.target.files[0];if(!f)return;const r=new FileReader();r.onload=ev=>{c.image=ev.target.result;renderAll();scheduleCommit();openClueEditor(id);};r.readAsDataURL(f);};
+    $('cl-imgbtn').onclick=()=>imgInp.click();
+    const clr=$('cl-clrimg');if(clr)clr.onclick=()=>{c.image=null;renderAll();scheduleCommit();openClueEditor(id);};
+    $('cl-del').onclick=()=>{deleteClue(id);hideModal();};
   });
 }
 
@@ -1466,13 +1549,13 @@ function updateCardEl(el,card){
     img.style.display='none';iw.style.display='block';
     if(img._src){img._src=null;img.removeAttribute('src');}
     iw.textContent=card.icon||'✦';
-    iw.style.fontSize=(22*(card.textScale||1)*txtMul())+'px';
+    iw.style.fontSize=(22*(card.textScale||1)*2)+'px'; // カード文字はデフォルト2倍（PC/モバイル共通）
   }
   el.classList.toggle('link-node',!!card.linkBoard); // 疑問へのリンクノードなら破線＋↗バッジ
   const nm=el.querySelector('.card-name');nm.textContent=card.name||'';
-  nm.style.fontSize=(13*(card.textScale||1)*txtMul())+'px';
+  nm.style.fontSize=(13*(card.textScale||1)*2)+'px';
   const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
-  sb.style.fontSize=(11*(card.textScale||1)*txtMul())+'px';
+  sb.style.fontSize=(11*(card.textScale||1)*2)+'px';
   setKeyBadge(el,card.key);
   // connect target highlight
   el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==card.id);
@@ -1650,13 +1733,13 @@ function pickDescOff(anchor, ownerRect, defOff, bw, bh, obstacles){
   return defOff; // nothing clear → fall back to the default spot
 }
 function renderDescs(){
+  // 解説は常に生成。OFFのときは hovonly（非表示）にして、カーソルを近づけた要素のものだけ .hov で表示
   const want=[];
-  if(S.showDesc){
-    S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
-    S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
-    S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
-    S.images.forEach(im=>{if(im.desc&&im.desc.trim())want.push({id:im.id,owner:im,kind:'image'});});
-  }
+  S.cards.forEach(c=>{if(c.desc&&c.desc.trim())want.push({id:c.id,owner:c,kind:'card'});});
+  S.branches.forEach(b=>{if(b.desc&&b.desc.trim())want.push({id:b.id,owner:b,kind:'branch'});});
+  S.arrows.forEach(a=>{if(a.desc&&a.desc.trim())want.push({id:a.id,owner:a,kind:'arrow'});});
+  S.images.forEach(im=>{if(im.desc&&im.desc.trim())want.push({id:im.id,owner:im,kind:'image'});});
+  const hovMode=!S.showDesc;
   const ex=new Map();
   elems.querySelectorAll('.desc-box[data-desc-id]').forEach(e=>ex.set(e.dataset.descId,e));
   const lex=new Map();
@@ -1681,6 +1764,7 @@ function renderDescs(){
     } else ex.delete(w.id);
     box.innerHTML=descHtml(w.owner.desc, w.kind==='card'?w.owner.name:''); // [[layer]] → jump-link to that layer's canvas (focus same-named card)
     box.style.fontSize=(11*(w.owner.descScale||1)*txtMul())+'px';
+    box.classList.toggle('hovonly',hovMode); if(!hovMode)box.classList.remove('hov');
     const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
     // respect a desc the user has dragged; otherwise auto-place it to avoid overlapping cards/arrows/other descs
     const off=(w.owner.descMoved&&w.owner.descOff) ? w.owner.descOff
@@ -1692,6 +1776,7 @@ function renderDescs(){
     let line=lex.get(w.id);
     if(!line){line=svgE('line',{'data-desc-id':w.id,stroke:'rgba(175,160,255,.6)','stroke-width':1.4,'stroke-dasharray':'5,4'});descLinesG.appendChild(line);}
     else lex.delete(w.id);
+    line.classList.toggle('hovonly',hovMode); if(!hovMode)line.classList.remove('hov');
     const bcx=bx+bw/2, bcy=by+bh/2;
     const ep=rectEdgePt(bcx,bcy,bw/2+2,bh/2+2,a.x,a.y);
     line.setAttribute('x1',a.x);line.setAttribute('y1',a.y);
@@ -1700,6 +1785,27 @@ function renderDescs(){
   ex.forEach(e=>e.remove());
   lex.forEach(l=>l.remove());
 }
+// 解説OFF時: カード/分岐/画像/矢印ラベル（または解説ボックス自身）にカーソルを近づけると該当の解説を表示
+let _hovDescId=null,_hovDescTimer=null;
+function applyDescHover(id,on){
+  const b=elems.querySelector(`.desc-box[data-desc-id="${id}"]`); if(b)b.classList.toggle('hov',on);
+  const l=descLinesG.querySelector(`[data-desc-id="${id}"]`); if(l)l.classList.toggle('hov',on);
+}
+elems.addEventListener('mouseover',e=>{
+  if(S.showDesc)return;
+  const el=e.target.closest&&e.target.closest('.desc-box,.card,.branch,.imgel,.alabel');
+  if(!el)return;
+  const id=el.dataset.descId||el.dataset.id;
+  if(!id||!ownerByDescId(id))return;
+  clearTimeout(_hovDescTimer);
+  if(_hovDescId&&_hovDescId!==id)applyDescHover(_hovDescId,false);
+  _hovDescId=id;applyDescHover(id,true);
+});
+elems.addEventListener('mouseout',()=>{
+  if(S.showDesc)return;
+  clearTimeout(_hovDescTimer);
+  _hovDescTimer=setTimeout(()=>{ if(_hovDescId){applyDescHover(_hovDescId,false);_hovDescId=null;} },160);
+});
 function onDescMousedown(e,id,kind){
   if(e.button!==0)return;
   if(e.target.classList&&e.target.classList.contains('layer-tag')){e.stopPropagation();return;} // let the tag click switch layers
@@ -1740,15 +1846,18 @@ function onDescCtx(e,id,kind){
 function openDescInput(id){
   const o=ownerByDescId(id);if(!o)return;
   showModal(`
-    <h2>解説を編集</h2>
-    <div class="fg"><label>解説（改行可）</label><textarea id="di-desc" style="min-height:120px">${esc(o.desc||'')}</textarea>${layerChipsHtml()}</div>
+    <h2>解説を編集 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存・Ctrl+Enterで改行）</span></h2>
+    <div class="fg"><textarea id="di-desc" style="min-height:120px">${esc(o.desc||'')}</textarea>${layerChipsHtml()}</div>
     <div class="mact">
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="di-save">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>
   `,()=>{
     wireLayerChips('di-desc');
-    document.getElementById('di-save').onclick=()=>{o.desc=document.getElementById('di-desc').value;hideModal();render();};
+    document.getElementById('di-desc').addEventListener('input',()=>{
+      o.desc=document.getElementById('di-desc').value;
+      if(o.name!==undefined&&cardById(o.id))syncCardByName(o); // カードなら同名カードへ共有
+      render(); scheduleCommit();
+    });
   });
 }
 
@@ -1930,10 +2039,30 @@ function createArrow(from,to){
 }
 
 function addCard(){
+  // まず属性（人物/手がかり/場所/疑問・伏線）を選ぶ。疑問・伏線はタイトルのみ→専用の図を作成、それ以外はカード作成。
+  showModal(`<h2>カードを追加</h2>
+    <div class="fg"><label>属性を選択</label>
+      <div style="display:grid;grid-template-columns:1fr 1fr;gap:8px;margin-top:4px">
+        ${Object.entries(ATTRS).map(([k,a])=>`<button type="button" class="btn btn-s attr-pick" data-attr="${k}" style="border-left:5px solid ${a.color};text-align:left;padding:11px 12px">${a.icon} ${a.label}</button>`).join('')}
+      </div>
+    </div>
+    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelectorAll('.attr-pick').forEach(b=>b.onclick=()=>{
+      const at=b.dataset.attr; hideModal();
+      if(at==='question')addQuestion(); else createCardWithAttr(at);
+    });
+  });
+}
+function createCardWithAttr(attr){
   const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
-  S.cards.push({id:uid(),x:c.x-75,y:c.y-45,w:150,h:90,name:'新しいカード',sub:'',
-    color:'#9b59b6',image:null,icon:'✦',shape:'rect',desc:'',textScale:1,zoneIds:[]});
+  const a=ATTRS[attr]||ATTRS.person;
+  const card={id:uid(),x:c.x-75,y:c.y-45,w:150,name:a.defName||'新しいカード',sub:'',
+    color:a.color,image:null,icon:a.icon,shape:'rect',desc:'',textScale:1,zoneIds:[],attr};
+  if(attr==='clue')card.key=true; // 手がかりは自動で🔑
+  S.cards.push(card);
+  autoLayerTag(card);
   renderAll();
+  openCardEditor(card.id);
 }
 
 function addBranch(x,y){
@@ -1985,6 +2114,19 @@ function showModal(html,onShown){
   modBox.innerHTML=html;
   modOv.classList.add('show');
   if(onShown)onShown();
+  // テキスト入力の改行ルール: Ctrl+Enter=改行 / Enter単独=改行しない（モーダルを閉じて確定）
+  modBox.querySelectorAll('textarea').forEach(ta=>{
+    ta.addEventListener('keydown',e=>{
+      if(e.key!=='Enter')return;
+      e.preventDefault();
+      if(e.ctrlKey||e.metaKey){
+        const s=ta.selectionStart??ta.value.length, en=ta.selectionEnd??ta.value.length;
+        ta.value=ta.value.slice(0,s)+'\n'+ta.value.slice(en);
+        ta.selectionStart=ta.selectionEnd=s+1;
+        ta.dispatchEvent(new Event('input',{bubbles:true}));
+      } else hideModal(); // Enter単独=確定して閉じる（自動保存済み）
+    });
+  });
 }
 function hideModal(){modOv.classList.remove('show');}
 modOv.addEventListener('mousedown',e=>{if(e.target===modOv)hideModal();});
@@ -1992,8 +2134,12 @@ modOv.addEventListener('mousedown',e=>{if(e.target===modOv)hideModal();});
 // ── CARD EDITOR ──
 function openCardEditor(id){
   const card=cardById(id);if(!card)return;
+  const at=attrOf(card);
   showModal(`
-    <h2>カードの編集</h2>
+    <h2>カードの編集 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（入力は自動保存されます）</span></h2>
+    <div class="fg"><label>属性（色が自動で変わります）</label>
+      <select id="ed-attr">${Object.entries(ATTRS).filter(([k])=>k!=='question').map(([k,a])=>`<option value="${k}"${at===k?' selected':''}>${a.icon} ${a.label}</option>`).join('')}</select>
+    </div>
     <div class="fg"><label>カード名</label><input type="text" id="ed-name" value="${esc(card.name)}"></div>
     <div class="fg"><label>サブ情報</label><input type="text" id="ed-sub" value="${esc(card.sub)}"></div>
     <div class="fg"><label>カードの色</label>
@@ -2023,22 +2169,33 @@ function openCardEditor(id){
       </div>
     </div>
     <div class="fg"><label>幅 (px)</label><input type="number" id="ed-w" value="${card.w||150}" min="80" max="600" style="width:80px"></div>
-    <div class="fg"><label>解説</label><textarea id="ed-desc">${esc(card.desc)}</textarea>${layerChipsHtml()}</div>
+    <div class="fg"><label>解説（同じカードの全レイヤーで共有・Ctrl+Enterで改行）</label><textarea id="ed-desc">${esc(card.desc)}</textarea>${layerChipsHtml()}</div>
     <div class="mact">
       <button class="btn btn-d" id="ed-del">🗑 削除</button>
       <button class="btn btn-s" id="ed-dup">複製</button>
       <button class="btn btn-s" id="ed-zones">ゾーン設定</button>
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="ed-save">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>
   `,()=>{
-    buildIconGrid('ed-icon-grid',card.icon,v=>document.getElementById('ed-cicon').value=v);
+    buildIconGrid('ed-icon-grid',card.icon,v=>{document.getElementById('ed-cicon').value=v;card.icon=v;renderAll();scheduleCommit();});
     wireLayerChips('ed-desc');
+    const $=x=>document.getElementById(x);
+    // すべてライブ反映（自動保存）
+    let prevName=card.name;
+    $('ed-attr').onchange=()=>{ card.attr=$('ed-attr').value; card.color=ATTRS[card.attr].color; $('ed-color').value=card.color;
+      if(card.attr==='clue'&&!card.key)setCardKey(card,true); renderAll(); scheduleCommit(); };
+    $('ed-name').addEventListener('input',()=>{ const nv=$('ed-name').value; renameCardEverywhere(prevName,nv); card.name=nv; prevName=nv; renderAll(); scheduleCommit(); });
+    $('ed-sub').addEventListener('input',()=>{ card.sub=$('ed-sub').value; render(); scheduleCommit(); });
+    $('ed-color').addEventListener('input',()=>{ card.color=$('ed-color').value; renderAll(); scheduleCommit(); });
+    $('ed-shape').onchange=()=>{ card.shape=$('ed-shape').value; render(); scheduleCommit(); };
+    $('ed-cicon').addEventListener('input',()=>{ card.icon=$('ed-cicon').value||'✦'; renderAll(); scheduleCommit(); });
+    $('ed-w').addEventListener('input',()=>{ card.w=parseInt($('ed-w').value)||150; render(); scheduleCommit(); });
+    $('ed-desc').addEventListener('input',()=>{ card.desc=$('ed-desc').value; syncCardByName(card); render(); scheduleCommit(); });
     document.querySelectorAll('.color-preset').forEach(p=>{
       p.addEventListener('click',()=>{
-        document.getElementById('ed-color').value=p.dataset.col;
+        $('ed-color').value=p.dataset.col; card.color=p.dataset.col;
         document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
-        p.classList.add('sel');
+        p.classList.add('sel'); renderAll(); scheduleCommit();
       });
     });
     // image upload
@@ -2047,27 +2204,16 @@ function openCardEditor(id){
       const f=e.target.files[0];if(!f)return;
       const r=new FileReader();r.onload=ev=>{
         card.image=ev.target.result;
-        // give image cards a roomier default so the picture shows large
         if(!card.w||card.w<=150)card.w=220;
-        openCardEditor(id);
+        renderAll();scheduleCommit();openCardEditor(id);
       };r.readAsDataURL(f);
     };
-    document.getElementById('ed-imgbtn').onclick=()=>imgInp.click();
-    const clrBtn=document.getElementById('ed-clrimg');
-    if(clrBtn)clrBtn.onclick=()=>{card.image=null;openCardEditor(id);};
-    document.getElementById('ed-save').onclick=()=>{
-      card.name=document.getElementById('ed-name').value;
-      card.sub=document.getElementById('ed-sub').value;
-      card.color=document.getElementById('ed-color').value;
-      card.shape=document.getElementById('ed-shape').value;
-      card.icon=document.getElementById('ed-cicon').value||'✦';
-      card.w=parseInt(document.getElementById('ed-w').value)||150;
-      card.desc=document.getElementById('ed-desc').value;
-      hideModal();renderAll();
-    };
-    document.getElementById('ed-del').onclick=()=>{if(confirm('このカードを削除しますか?')){deleteCard(id);hideModal();}};
-    document.getElementById('ed-dup').onclick=()=>{duplicateCard(id);hideModal();};
-    document.getElementById('ed-zones').onclick=()=>openZoneEditor(id);
+    $('ed-imgbtn').onclick=()=>imgInp.click();
+    const clrBtn=$('ed-clrimg');
+    if(clrBtn)clrBtn.onclick=()=>{card.image=null;renderAll();scheduleCommit();openCardEditor(id);};
+    $('ed-del').onclick=()=>{if(confirm('このカードを削除しますか?')){deleteCard(id);hideModal();}};
+    $('ed-dup').onclick=()=>{duplicateCard(id);hideModal();};
+    $('ed-zones').onclick=()=>openZoneEditor(id);
   });
 }
 
@@ -2104,38 +2250,34 @@ function openArrowEditor(id){
       </div>
     </div>
     <div class="fg"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ae-dashed" ${arr.dashed?'checked':''}> 点線</label></div>
-    <div class="fg"><label>解説</label><textarea id="ae-desc">${esc(arr.desc)}</textarea></div>
+    <div class="fg"><label>解説（Ctrl+Enterで改行）</label><textarea id="ae-desc">${esc(arr.desc)}</textarea></div>
     <div class="mact">
       <button class="btn btn-d" id="ae-del">🗑 削除</button>
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="ae-save">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>
   `,()=>{
-    let selW=arr.width||2;
+    const $=x=>document.getElementById(x);
+    // 入力は即時反映（自動保存）
+    $('ae-name').addEventListener('input',()=>{ arr.name=$('ae-name').value; render(); scheduleCommit(); });
+    $('ae-icon').addEventListener('input',()=>{ arr.icon=$('ae-icon').value; render(); scheduleCommit(); });
+    $('ae-color').addEventListener('input',()=>{ arr.color=$('ae-color').value; render(); scheduleCommit(); });
+    $('ae-dashed').onchange=()=>{ arr.dashed=$('ae-dashed').checked; render(); scheduleCommit(); };
+    $('ae-desc').addEventListener('input',()=>{ arr.desc=$('ae-desc').value; render(); scheduleCommit(); });
     document.querySelectorAll('.thick-btn').forEach(b=>{
       b.addEventListener('click',()=>{
-        selW=parseInt(b.dataset.w);
+        arr.width=parseInt(b.dataset.w);
         document.querySelectorAll('.thick-btn').forEach(x=>x.classList.remove('sel'));
-        b.classList.add('sel');
+        b.classList.add('sel'); render(); scheduleCommit();
       });
     });
     document.querySelectorAll('.color-preset').forEach(p=>{
       p.addEventListener('click',()=>{
-        document.getElementById('ae-color').value=p.dataset.col;
+        $('ae-color').value=p.dataset.col; arr.color=p.dataset.col;
         document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
-        p.classList.add('sel');
+        p.classList.add('sel'); render(); scheduleCommit();
       });
     });
-    document.getElementById('ae-save').onclick=()=>{
-      arr.name=document.getElementById('ae-name').value;
-      arr.icon=document.getElementById('ae-icon').value;
-      arr.color=document.getElementById('ae-color').value;
-      arr.width=selW;
-      arr.dashed=document.getElementById('ae-dashed').checked;
-      arr.desc=document.getElementById('ae-desc').value;
-      hideModal();render();
-    };
-    document.getElementById('ae-del').onclick=()=>{deleteArrow(id);hideModal();};
+    $('ae-del').onclick=()=>{deleteArrow(id);hideModal();};
   });
 }
 
@@ -2158,29 +2300,27 @@ function openBranchEditor(id){
         ${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}"></div>`).join('')}
       </div>
     </div>
-    <div class="fg"><label>解説</label><textarea id="be-desc">${esc(br.desc)}</textarea></div>
+    <div class="fg"><label>解説（Ctrl+Enterで改行）</label><textarea id="be-desc">${esc(br.desc)}</textarea></div>
     <div class="mact">
       <button class="btn btn-d" id="be-del">🗑 削除</button>
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="be-save">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>
   `,()=>{
-    buildIconGrid('be-icon-grid',br.icon,v=>document.getElementById('be-cicon').value=v);
+    const $=x=>document.getElementById(x);
+    buildIconGrid('be-icon-grid',br.icon,v=>{$('be-cicon').value=v;br.icon=v;render();scheduleCommit();});
+    // 入力は即時反映（自動保存）
+    $('be-name').addEventListener('input',()=>{ br.name=$('be-name').value; render(); scheduleCommit(); });
+    $('be-cicon').addEventListener('input',()=>{ br.icon=$('be-cicon').value||'⑂'; render(); scheduleCommit(); });
+    $('be-color').addEventListener('input',()=>{ br.color=$('be-color').value; render(); scheduleCommit(); });
+    $('be-desc').addEventListener('input',()=>{ br.desc=$('be-desc').value; render(); scheduleCommit(); });
     document.querySelectorAll('.color-preset').forEach(p=>{
       p.addEventListener('click',()=>{
-        document.getElementById('be-color').value=p.dataset.col;
+        $('be-color').value=p.dataset.col; br.color=p.dataset.col;
         document.querySelectorAll('.color-preset').forEach(x=>x.classList.remove('sel'));
-        p.classList.add('sel');
+        p.classList.add('sel'); render(); scheduleCommit();
       });
     });
-    document.getElementById('be-save').onclick=()=>{
-      br.name=document.getElementById('be-name').value;
-      br.icon=document.getElementById('be-cicon').value||'⑂';
-      br.color=document.getElementById('be-color').value;
-      br.desc=document.getElementById('be-desc').value;
-      hideModal();render();
-    };
-    document.getElementById('be-del').onclick=()=>{deleteBranch(id);hideModal();};
+    $('be-del').onclick=()=>{deleteBranch(id);hideModal();};
   });
 }
 
@@ -2245,25 +2385,21 @@ function openSubtitleEditor(id){
     <div class="fg"><label>枠の色</label><input type="color" id="ste-bcol" value="${st.borderColor||'#c8a8ff'}"></div>
     <div class="mact">
       <button class="btn btn-d" id="ste-del">🗑 削除</button>
-      <button class="btn btn-s" onclick="hideModal()">キャンセル</button>
-      <button class="btn btn-p" id="ste-save">保存</button>
+      <button class="btn btn-p" onclick="hideModal()">閉じる</button>
     </div>
   `,()=>{
-    let selB=bw;
+    const $=x=>document.getElementById(x);
+    // 入力は即時反映（自動保存）
+    $('ste-txt').addEventListener('input',()=>{ st.text=$('ste-txt').value; render(); scheduleCommit(); });
+    $('ste-size').addEventListener('input',()=>{ st.size=parseInt($('ste-size').value)||22; render(); scheduleCommit(); });
+    $('ste-col').addEventListener('input',()=>{ st.color=$('ste-col').value; render(); scheduleCommit(); });
+    $('ste-bcol').addEventListener('input',()=>{ st.borderColor=$('ste-bcol').value; render(); scheduleCommit(); });
     document.querySelectorAll('.thick-btn').forEach(b=>b.addEventListener('click',()=>{
-      selB=parseInt(b.dataset.w);
+      st.border=parseInt(b.dataset.w);
       document.querySelectorAll('.thick-btn').forEach(x=>x.classList.remove('sel'));
-      b.classList.add('sel');
+      b.classList.add('sel'); render(); scheduleCommit();
     }));
-    document.getElementById('ste-save').onclick=()=>{
-      st.text=document.getElementById('ste-txt').value;
-      st.size=parseInt(document.getElementById('ste-size').value)||22;
-      st.border=selB;
-      st.color=document.getElementById('ste-col').value;
-      st.borderColor=document.getElementById('ste-bcol').value;
-      hideModal();render();
-    };
-    document.getElementById('ste-del').onclick=()=>{deleteSubtitle(id);hideModal();};
+    $('ste-del').onclick=()=>{deleteSubtitle(id);hideModal();};
   });
 }
 
@@ -2808,6 +2944,15 @@ function applyDocData(d){
   S.layers=Array.isArray(d.layers)?d.layers.slice():[];
   ensureLayers(d.mainTitle);
   if(!S.layers.some(l=>l.id===S.currentBoard) && !S.questions.some(q=>q.id===S.currentBoard)) S.currentBoard='main';
+  // 属性マイグレーション: 旧データに attr を付与（リンクノード=疑問 / 手がかり由来・同名=手がかり / それ以外=人物）。手がかりは🔑必須
+  {
+    const clueNames=new Set(S.clues.map(c=>(c.name||'').trim()).filter(Boolean));
+    Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{
+      if(!c.attr)c.attr=c.linkBoard?'question':((c.fromClue||clueNames.has((c.name||'').trim()))?'clue':'person');
+      if(c.attr==='clue')c.key=true;
+    }));
+    S.clues.forEach(c=>{ c.key=true; if(!c.attr)c.attr='clue'; });
+  }
   loadActiveBoard();
   document.getElementById('bg-sel').value=S.bg;
   document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
