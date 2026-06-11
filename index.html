@@ -101,8 +101,8 @@ body.filemenu-open #menu-backdrop{display:block}
 /* pointer-events:none so the card (not the img) receives the drag, and no native image drag-ghost */
 .card-img{width:100%;height:auto;max-height:280px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
 .card.shape-circle .card-img{width:100%;height:100%;border-radius:50%;margin:0}
-.card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);word-break:break-all}
-.card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;word-break:break-all}
+.card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);white-space:pre} /* 改行は明示(\n)のみ */
+.card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;white-space:pre}
 /* unified draggable description box — always horizontal, linked by a dotted line */
 .desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;white-space:pre;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)} /* 改行は明示(\n=Ctrl+Enter)のみ。自動折返しせず横に伸びる */
 .desc-box.hovonly{display:none} /* 解説OFF時はホバーでだけ表示 */
@@ -115,8 +115,13 @@ body.filemenu-open #menu-backdrop{display:block}
 .layer-tag:hover{filter:brightness(1.25)}
 .card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
 .card.link-node{outline:2px dashed rgba(255,255,255,.55);outline-offset:2px}
-.link-badge{position:absolute;bottom:-11px;right:-11px;width:25px;height:25px;background:#f0a02a;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:bold;color:#1a1208;z-index:21;border:2px solid #0d0d1a;box-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1}
+.link-badge{position:absolute;bottom:-11px;left:-11px;width:25px;height:25px;background:#f0a02a;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:bold;color:#1a1208;z-index:21;border:2px solid #0d0d1a;box-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1} /* 左下（右下はリサイズハンドル用） */
 .card.link-node .link-badge{display:flex}
+/* 右下リサイズハンドル（全オブジェクト共通） */
+.rsz{position:absolute;right:-8px;bottom:-8px;width:16px;height:16px;border-radius:4px;background:#1e1e4a;border:1.5px solid #8a8aff;cursor:nwse-resize;z-index:26;display:none;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.rsz::after{content:'';position:absolute;right:3px;bottom:3px;width:6px;height:6px;border-right:2px solid #c8c8ff;border-bottom:2px solid #c8c8ff}
+.card:hover>.rsz,.branch:hover>.rsz,.subtitle:hover>.rsz,.imgel:hover>.rsz,.desc-box:hover>.rsz{display:block}
+@media (pointer:coarse){.rsz{display:block;width:24px;height:24px;right:-11px;bottom:-11px}} /* タッチ端末では常時表示 */
 .card-add-btn:hover{background:#2277cc}
 /* "key" marker badge shown on flagged objects */
 .key-badge{position:absolute;top:-18px;left:-18px;width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#16162e;border:2.5px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 11px rgba(245,197,24,.45);line-height:1}
@@ -132,14 +137,14 @@ body.filemenu-open #menu-backdrop{display:block}
 .branch.selected{box-shadow:0 0 0 3px #fff,0 0 20px rgba(255,200,60,.6)!important}
 .branch.conn-target{box-shadow:0 0 0 3px #4affaa,0 0 20px rgba(74,255,170,.4)!important;cursor:crosshair}
 .branch .card-add-btn{top:-8px;right:-8px;width:18px;height:18px;font-size:11px}
-.branch-label{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:bold;color:#fff;white-space:nowrap;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
+.branch-label{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:bold;color:#fff;white-space:pre;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
 
 /* ── ARROW LABELS ── */
-.alabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,15,40,.88);border:1px solid rgba(255,255,255,.2);padding:4px 10px;border-radius:16px;font-size:12px;color:#e0e0ff;cursor:pointer;white-space:nowrap;z-index:30;transition:border-color .15s}
+.alabel{position:absolute;transform:translate(-50%,-50%);background:rgba(15,15,40,.88);border:1px solid rgba(255,255,255,.2);padding:4px 10px;border-radius:16px;font-size:12px;color:#e0e0ff;cursor:pointer;white-space:pre;text-align:center;z-index:30;transition:border-color .15s}
 .alabel:hover{border-color:rgba(150,100,255,.7);background:rgba(25,15,55,.95)}
 
 /* ── SUBTITLES ── */
-.subtitle{position:absolute;background:rgba(0,0,0,.55);border:3px solid #c8a8ff;padding:8px 18px;border-radius:8px;font-size:22px;font-weight:bold;color:#fff;cursor:pointer;z-index:25;white-space:nowrap;text-shadow:0 2px 6px rgba(0,0,0,.7)}
+.subtitle{position:absolute;background:rgba(0,0,0,.55);border:3px solid #c8a8ff;padding:8px 18px;border-radius:8px;font-size:22px;font-weight:bold;color:#fff;cursor:pointer;z-index:25;white-space:pre;text-shadow:0 2px 6px rgba(0,0,0,.7)}
 .subtitle:hover{border-color:#e8c8ff}
 .subtitle.selected{outline:3px solid #4af;outline-offset:2px;box-shadow:0 0 18px rgba(74,160,255,.6)}
 
@@ -158,6 +163,7 @@ body.filemenu-open #menu-backdrop{display:block}
 .fg label{display:block;font-size:11px;color:#888;margin-bottom:4px}
 .fg input[type=text],.fg input[type=number],.fg textarea,.fg select{width:100%;background:#0d0d24;border:1px solid #2a2a5a;color:#e0e0e0;padding:7px 9px;border-radius:6px;font-size:13px;font-family:inherit;outline:none}
 .fg input[type=text]:focus,.fg textarea:focus,.fg select:focus{border-color:#6a4aaa}
+.fg textarea.ta-line{min-height:36px;height:36px;resize:vertical} /* 1行用textarea（Ctrl+Enterで改行可） */
 .fg textarea{resize:vertical;min-height:70px}
 .fg input[type=color]{height:34px;padding:2px 4px;cursor:pointer;border-radius:6px;width:60px;background:#0d0d24;border:1px solid #2a2a5a}
 .color-row{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
@@ -695,6 +701,7 @@ function chooseKeyBoard(name, boardIds){ // when a key spans multiple layers / �
 }
 function makeKeyItem(k){
   const it=document.createElement('div');it.className='q-item';
+  it.style.borderLeft='4px solid #f5c518'; // キー（🔑）
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent='🔑';ico.style.color='#f5c518';
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=k.name;ti.title=k.name+'（キー）';fitTitle(ti,k.name);
   it.appendChild(ico);it.appendChild(ti);
@@ -748,6 +755,8 @@ function renameLayer(id){
       saveActiveBoard();
       Object.values(S.boards).forEach(bd=>['cards','branches','arrows','images'].forEach(k=>(bd[k]||[]).forEach(o=>{ if(o.desc&&o.desc.includes(oldTag))o.desc=o.desc.split(oldTag).join(newTag); })));
       S.clues.forEach(c=>{ if(c.desc&&c.desc.includes(oldTag))c.desc=c.desc.split(oldTag).join(newTag); });
+      // 旧名をエイリアスとして記憶 → 書き換え漏れの古いタグもリンクとして機能し続ける
+      ly.aliases=ly.aliases||[]; if(!ly.aliases.includes(ly.name))ly.aliases.push(ly.name);
       ly.name=nv; render(); renderSidebar(); scheduleCommit();
     });
     inp.onkeydown=e=>{if(e.key==='Enter')hideModal();};
@@ -767,6 +776,24 @@ function jumpToLayer(layerId,cardName){
   const ly=layerById(layerId);if(!ly)return;
   if(S.currentBoard!==ly.id)switchBoard(ly.id);
   if(cardName){ const c=S.cards.find(x=>(x.name||'').trim()===(cardName||'').trim()); if(c)focusCard(c.id); }
+}
+// ── 右下リサイズハンドル（カード/分岐/テキスト/画像/解説 共通） ──
+function ensureRsz(el,onStart){
+  if(el.querySelector(':scope > .rsz'))return;
+  const h=document.createElement('div');h.className='rsz';h.title='ドラッグでサイズ変更';
+  h.addEventListener('mousedown',e=>{ if(e.button!==0)return; e.stopPropagation(); e.preventDefault(); onStart(e); });
+  h.addEventListener('touchstart',e=>{ if(e.touches.length!==1)return; e.stopPropagation(); e.preventDefault(); onStart(e); },{passive:false});
+  el.appendChild(h);
+}
+function rszDrag(e,s0,apply){
+  const p0=e.touches?e.touches[0]:e;
+  const sx=p0.clientX, sy=p0.clientY;
+  const mv=ev=>{ const p=ev.touches?ev.touches[0]:ev; if(!p)return; if(ev.cancelable)ev.preventDefault();
+    const d=Math.max((p.clientX-sx)/S.zoom,(p.clientY-sy)/S.zoom); apply(s0,d); };
+  const up=()=>{ window.removeEventListener('mousemove',mv);window.removeEventListener('mouseup',up);
+    window.removeEventListener('touchmove',mv);window.removeEventListener('touchend',up); scheduleCommit(); };
+  window.addEventListener('mousemove',mv); window.addEventListener('mouseup',up);
+  window.addEventListener('touchmove',mv,{passive:false}); window.addEventListener('touchend',up);
 }
 // 配置されたレイヤーのタグを解説に自動挿入（既にあれば何もしない）
 function autoLayerTag(card){
@@ -867,6 +894,7 @@ function makeBoardItem(en){
   const ico=document.createElement('span');ico.className='q-ico';ico.textContent=en.ico;
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=en.title;ti.title=en.title;fitTitle(ti,en.title);
   it.appendChild(ico);it.appendChild(ti);
+  if(en.isQ)it.style.borderLeft='4px solid '+ATTRS.question.color; // 疑問・伏線属性色
   if(en.isQ){
     const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
     del.onclick=e=>{e.stopPropagation();if(confirm('この疑問とその関係図を削除しますか？'))deleteQuestion(en.id);};
@@ -949,19 +977,23 @@ function addItemEl(label,title,onClick){
   const a=document.createElement('div');a.className='q-item q-add-item';a.textContent='＋';a.title=title;a.onclick=onClick;return a;
 }
 function keyTagEl(){const s=document.createElement('span');s.textContent='🔑';s.title='キー';s.style.cssText='flex:0 0 auto;font-size:13px;margin:0 2px';return s;}
-// 名前が長い場合はフォントを自動縮小して全文表示（最小8px、それでも収まらなければ折返し）
+// 名前が長い場合はフォントを自動縮小して全文表示。
+// 半角文字は0.55文字分として実効幅で計算（サイドバー幅いっぱい≒205pxを使う）
 function fitTitle(ti,name){
-  const len=(name||'').length;
-  if(len<=14)return;
-  const fs=Math.max(8,Math.min(13,Math.floor(186/len)));
+  const s=name||'';
+  let eff=0; for(const ch of s){ eff += /[ -ÿ｡-ﾟ]/.test(ch)?0.55:1; }
+  const AVAIL=205;
+  if(eff*13<=AVAIL)return;               // 13pxのままで収まる
+  const fs=Math.max(9,Math.floor(AVAIL/eff));
   ti.style.fontSize=fs+'px';
-  if(fs<=8){ ti.style.whiteSpace='normal'; ti.style.lineHeight='1.25'; ti.style.wordBreak='break-all'; }
+  if(eff*fs>AVAIL){ ti.style.whiteSpace='normal'; ti.style.lineHeight='1.25'; ti.style.wordBreak='break-all'; } // 9pxでも収まらない時だけ折返し
 }
 function makeClueItem(c){
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.clueId=c.id;
+  it.style.borderLeft='4px solid '+ATTRS.clue.color; // 手がかり属性色
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
-  else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
+  else{th.textContent=c.icon||'🔍';th.style.background=ATTRS.clue.color;}
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'手がかり';ti.title=c.name||'';fitTitle(ti,c.name);
   const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
   del.onclick=e=>{e.stopPropagation();if(confirm('この手がかりを削除しますか？'))deleteClue(c.id);};
@@ -1006,9 +1038,11 @@ function makeCardListItem(c, boardId, boards){
   const fromBoard=boardId||S.currentBoard;
   const onCurrent=fromBoard===S.currentBoard;
   const it=document.createElement('div');it.className='q-item clue-item';it.dataset.cardId=c.id;it.dataset.cardBoard=fromBoard;it.dataset.cardkey=(c.name||'').trim()||(' '+c.id);
+  const atCol=(ATTRS[attrOf(c)]||ATTRS.person).color;
+  it.style.borderLeft='4px solid '+atCol; // 属性ごとの色
   const th=document.createElement('span');th.className='clue-thumb';
   if(c.image){const img=document.createElement('img');img.src=c.image;img.draggable=false;th.appendChild(img);}
-  else{th.textContent=c.icon||'✦';th.style.background=c.color||'#9b59b6';}
+  else{th.textContent=c.icon||'✦';th.style.background=atCol;}
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=c.name||'カード';ti.title=c.name||'';fitTitle(ti,c.name);
   it.appendChild(th);it.appendChild(ti);if(c.key)it.appendChild(keyTagEl());
   // click → jump to the layer/疑問 the card is on (choose when it's on several), like the 疑問・伏線 list
@@ -1197,8 +1231,8 @@ function openClueEditor(id){
   const c=S.clues.find(x=>x.id===id);if(!c)return;
   showModal(`
     <h2>手がかりカードの編集</h2>
-    <div class="fg"><label>名称</label><input type="text" id="cl-name" value="${esc(c.name)}"></div>
-    <div class="fg"><label>サブ情報</label><input type="text" id="cl-sub" value="${esc(c.sub||'')}"></div>
+    <div class="fg"><label>名称（Ctrl+Enterで改行）</label><textarea class="ta-line" id="cl-name">${esc(c.name)}</textarea></div>
+    <div class="fg"><label>サブ情報（Ctrl+Enterで改行）</label><textarea class="ta-line" id="cl-sub">${esc(c.sub||'')}</textarea></div>
     <div class="fg"><label>色</label><div class="color-row"><input type="color" id="cl-color" value="${c.color||'#e67e22'}">${PRESETS.map(p=>`<div class="color-preset" style="background:${p}" data-col="${p}"></div>`).join('')}</div></div>
     <div class="fg"><label>枠の形</label><select id="cl-shape"><option value="rect"${c.shape==='rect'?' selected':''}>□ 四角</option><option value="circle"${c.shape==='circle'?' selected':''}>○ 円形</option><option value="bubble"${c.shape==='bubble'?' selected':''}>💬 吹き出し</option></select></div>
     <div class="fg"><label>アイコン（画像なし時）</label><div class="icon-grid" id="cl-icon-grid"></div>
@@ -1518,6 +1552,9 @@ function createCardEl(card){
   // events
   el.addEventListener('mousedown',e=>onCardMousedown(e,card.id));
   el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onCardCtx(e,card.id)});
+  // 右下ドラッグでカード全体サイズ変更
+  ensureRsz(el,e=>{ const c=cardById(el.dataset.id); if(!c)return;
+    rszDrag(e,{w:cardEffW(c),sc:c.scale||1},(s0,d)=>{ c.scale=Math.min(4,Math.max(.3,s0.sc*(s0.w+d)/s0.w)); render(); }); });
   updateCardEl(el,card);
   return el;
 }
@@ -1593,6 +1630,9 @@ function createBranchEl(br){
   const lbl=document.createElement('div');lbl.className='branch-label';el.appendChild(lbl);
   el.addEventListener('mousedown',e=>onCardMousedown(e,br.id));
   el.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onBranchCtx(e,br.id)});
+  // 右下ドラッグでサイズ変更
+  ensureRsz(el,e=>{ const b=branchById(br.id); if(!b)return;
+    rszDrag(e,{w:40*(b.scale||1),sc:b.scale||1},(s0,d)=>{ b.scale=Math.min(5,Math.max(.4,s0.sc*(s0.w+d)/s0.w)); render(); }); });
   updateBranchEl(el,br);
   return el;
 }
@@ -1698,12 +1738,12 @@ function descHtml(text, ownerName){
   let out='',last=0,m;const re=/\[\[([^\]]+)\]\]/g;
   while((m=re.exec(text))){
     out+=esc(text.slice(last,m.index));
-    const name=m[1].trim(), ly=S.layers.find(l=>l.name===name);
+    const name=m[1].trim();
+    // 現在名 → 一致しなければ旧名（エイリアス）でも解決＝改名後もタグが機能し続ける
+    const ly=S.layers.find(l=>l.name===name)||S.layers.find(l=>(l.aliases||[]).includes(name));
     if(ly){
-      // a recognised layer tag is always a clickable jump to that layer's canvas
-      // (on jump, the same-named card is focused if it exists there)
       const cardAttr = ownerName? ` data-card="${esc(ownerName)}"`:'';
-      out += `<span class="layer-tag" data-layer="${ly.id}"${cardAttr} style="color:${ly.color}">${esc(name)}</span>`;
+      out += `<span class="layer-tag" data-layer="${ly.id}"${cardAttr} style="color:${ly.color}">${esc(ly.name)}</span>`; // 表示は常に現在のレイヤー名
     } else out+=esc(m[0]); // unknown layer name → plain text
     last=m.index+m[0].length;
   }
@@ -1765,6 +1805,9 @@ function renderDescs(){
     box.innerHTML=descHtml(w.owner.desc, w.kind==='card'?w.owner.name:''); // [[layer]] → jump-link to that layer's canvas (focus same-named card)
     box.style.fontSize=(11*(w.owner.descScale||1)*txtMul())+'px';
     box.classList.toggle('hovonly',hovMode); if(!hovMode)box.classList.remove('hov');
+    // 右下ドラッグで解説サイズ変更（innerHTMLで毎回消えるため都度付け直す）
+    ensureRsz(box,e=>{ const o=ownerByDescId(w.id); if(!o)return;
+      rszDrag(e,{w:box.offsetWidth,sc:o.descScale||1},(s0,d)=>{ o.descScale=Math.min(3,Math.max(.5,s0.sc*(s0.w+d)/s0.w)); renderDescs(); }); });
     const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
     // respect a desc the user has dragged; otherwise auto-place it to avoid overlapping cards/arrows/other descs
     const off=(w.owner.descMoved&&w.owner.descOff) ? w.owner.descOff
@@ -1886,6 +1929,9 @@ function renderSubtitles(){
     el.style.background=bw>0?'rgba(0,0,0,.55)':'transparent';
     el.style.padding=bw>0?'8px 18px':'2px 6px';
     setKeyBadge(el,st.key);
+    // 右下ドラッグで文字サイズ変更（textContentで毎回消えるため都度付け直す）
+    ensureRsz(el,e=>{ const s=S.subtitles.find(x=>x.id===st.id); if(!s)return;
+      rszDrag(e,{w:el.offsetWidth,size:s.size||22},(s0,d)=>{ s.size=Math.min(140,Math.max(8,Math.round(s0.size*(s0.w+d)/s0.w))); render(); }); });
   });
   ex.forEach(e=>e.remove());
 }
@@ -1907,6 +1953,9 @@ function renderImages(){
     const img=el.querySelector('img');
     img.src=im.src;img.style.width=im.w+'px';img.style.height=im.h+'px';
     setKeyBadge(el,im.key);
+    // 右下ドラッグで画像サイズ変更（縦横比維持）
+    ensureRsz(el,e=>{ const m=S.images.find(x=>x.id===im.id); if(!m)return;
+      rszDrag(e,{w:m.w,h:m.h},(s0,d)=>{ const nw=Math.min(4000,Math.max(40,s0.w+d)); m.w=nw; m.h=s0.h*(nw/s0.w); render(); }); });
   });
   ex.forEach(e=>e.remove());
 }
@@ -2116,6 +2165,10 @@ function showModal(html,onShown){
   if(onShown)onShown();
   // テキスト入力の改行ルール: Ctrl+Enter=改行 / Enter単独=改行しない（モーダルを閉じて確定）
   modBox.querySelectorAll('textarea').forEach(ta=>{
+    if(ta.classList.contains('ta-line')){ // 1行欄は内容に合わせて自動伸長
+      const grow=()=>{ ta.style.height='auto'; ta.style.height=Math.min(200,Math.max(36,ta.scrollHeight))+'px'; };
+      ta.addEventListener('input',grow); grow();
+    }
     ta.addEventListener('keydown',e=>{
       if(e.key!=='Enter')return;
       e.preventDefault();
@@ -2140,8 +2193,8 @@ function openCardEditor(id){
     <div class="fg"><label>属性（色が自動で変わります）</label>
       <select id="ed-attr">${Object.entries(ATTRS).filter(([k])=>k!=='question').map(([k,a])=>`<option value="${k}"${at===k?' selected':''}>${a.icon} ${a.label}</option>`).join('')}</select>
     </div>
-    <div class="fg"><label>カード名</label><input type="text" id="ed-name" value="${esc(card.name)}"></div>
-    <div class="fg"><label>サブ情報</label><input type="text" id="ed-sub" value="${esc(card.sub)}"></div>
+    <div class="fg"><label>カード名（Ctrl+Enterで改行）</label><textarea class="ta-line" id="ed-name">${esc(card.name)}</textarea></div>
+    <div class="fg"><label>サブ情報（Ctrl+Enterで改行）</label><textarea class="ta-line" id="ed-sub">${esc(card.sub)}</textarea></div>
     <div class="fg"><label>カードの色</label>
       <div class="color-row">
         <input type="color" id="ed-color" value="${card.color||'#9b59b6'}">
@@ -2236,7 +2289,7 @@ function openArrowEditor(id){
   const arr=arrById(id);if(!arr)return;
   showModal(`
     <h2>矢印の編集</h2>
-    <div class="fg"><label>関係の名称</label><input type="text" id="ae-name" value="${esc(arr.name)}"></div>
+    <div class="fg"><label>関係の名称（Ctrl+Enterで改行）</label><textarea class="ta-line" id="ae-name">${esc(arr.name)}</textarea></div>
     <div class="fg"><label>アイコン（絵文字）</label><input type="text" id="ae-icon" value="${esc(arr.icon)}" style="width:60px;text-align:center;font-size:18px"></div>
     <div class="fg"><label>線の色</label>
       <div class="color-row">
@@ -2286,7 +2339,7 @@ function openBranchEditor(id){
   const br=branchById(id);if(!br)return;
   showModal(`
     <h2>分岐ノードの編集</h2>
-    <div class="fg"><label>ラベル</label><input type="text" id="be-name" value="${esc(br.name)}"></div>
+    <div class="fg"><label>ラベル（Ctrl+Enterで改行）</label><textarea class="ta-line" id="be-name">${esc(br.name)}</textarea></div>
     <div class="fg"><label>アイコン</label>
       <div class="icon-grid" id="be-icon-grid"></div>
       <div style="margin-top:8px;display:flex;align-items:center;gap:8px">
@@ -2374,7 +2427,7 @@ function openSubtitleEditor(id){
   const bw=(st.border==null?3:st.border);
   showModal(`
     <h2>テキストの編集</h2>
-    <div class="fg"><label>テキスト</label><input type="text" id="ste-txt" value="${esc(st.text)}"></div>
+    <div class="fg"><label>テキスト（Ctrl+Enterで改行）</label><textarea class="ta-line" id="ste-txt">${esc(st.text)}</textarea></div>
     <div class="fg"><label>文字サイズ (px)</label><input type="number" id="ste-size" value="${st.size||22}" min="8" max="96" style="width:80px"></div>
     <div class="fg"><label>枠の太さ (px / 0=枠なし＝通常テキスト)</label>
       <div class="thick-btns">
