@@ -357,6 +357,8 @@ body.filemenu-open #menu-backdrop{display:block}
   <span id="app-title">🔍 ClueBoard</span>
   <input id="doc-title" placeholder="タイトルを入力" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
   <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-chapter" title="章モードの切替・追加（クリック）">📖 1章 ▾</button>
+  <div class="menu-sep"></div>
   <button class="mbtn" id="btn-undo" title="元に戻す (Ctrl+Z)" disabled>↶ 戻る</button>
   <button class="mbtn" id="btn-redo" title="やり直し (Ctrl+Y)" disabled>↷ 進む</button>
   <div class="menu-sep"></div>
@@ -454,6 +456,7 @@ const S = {
   selection:[],      // ids of multi-selected elements (Ctrl+Click)
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
   currentBoard:'main', questions:[], boards:{}, cardOrder:[], docTitle:'', cardFilter:'all',
+  chapters:['1章'], chapter:'1章',  // 章（チャプター）モード。'__all'=全章表示
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
@@ -468,6 +471,66 @@ const ATTRS={
   question:{label:'疑問・伏線',color:'#cc5de8', icon:'❓'}
 };
 function attrOf(c){return (c&&c.attr)|| (c&&c.linkBoard?'question': (c&&c.fromClue?'clue':'person'));}
+const FUKUSEN='伏線'; // 特別な章タグ：付いたカードは章に関係なくサイドバー最下部の伏線欄に常時表示
+// 章ヘルパー
+function curChapterForNew(){ return S.chapter==='__all' ? '' : S.chapter; } // 新規作成時に付ける章（全章表示なら無タグ）
+function tagChapter(card){ const ch=curChapterForNew(); if(!ch)return; card.chapters=card.chapters||[]; if(!card.chapters.includes(ch))card.chapters.push(ch); }
+function cardChapters(c){ return (c&&c.chapters)||[]; }
+function inChapter(c){ const ch=S.chapter; if(ch==='__all')return true; const cs=cardChapters(c); return cs.length===0 || cs.includes(ch); } // 無タグは全章で表示
+function isFukusen(c){ return cardChapters(c).includes(FUKUSEN); }
+function layerInChapter(l){ const ch=S.chapter; if(ch==='__all'||!l.chapter)return true; return l.chapter===ch; }
+function setChapter(ch){
+  S.chapter=ch;
+  document.getElementById('btn-chapter').textContent='📖 '+(ch==='__all'?'全章':ch)+' ▾';
+  // 章を切り替えたとき、現在のレイヤーがその章に属さなければ、その章の最初のレイヤーへ移動
+  if(ch!=='__all'){
+    const cur=layerById(S.currentBoard);
+    if(cur && cur.chapter && cur.chapter!==ch){
+      const tgt=S.layers.find(l=>l.chapter===ch)||S.layers.find(l=>!l.chapter);
+      if(tgt && tgt.id!==S.currentBoard){ switchBoard(tgt.id); }
+    }
+  }
+  renderSidebar(); scheduleCommit();
+}
+function openChapterMenu(ev){
+  const items=[];
+  items.push({icon:'📚',label:'全章を表示',action:()=>setChapter('__all')});
+  S.chapters.forEach(ch=>items.push({icon:(S.chapter===ch?'✔':'　'),label:ch,action:()=>setChapter(ch)}));
+  items.push('sep');
+  items.push({icon:'＋',label:'章を追加',action:()=>{
+    const n=S.chapters.length+1, name=n+'章';
+    if(!S.chapters.includes(name))S.chapters.push(name);
+    setChapter(name);
+  }});
+  if(S.chapter!=='__all')items.push({icon:'✏️',label:'この章の名前を変更',action:()=>renameChapter(S.chapter)});
+  if(S.chapter!=='__all'&&S.chapters.length>1)items.push({icon:'🗑',label:'この章を削除',danger:true,action:()=>deleteChapter(S.chapter)});
+  const r=ev.currentTarget.getBoundingClientRect();
+  showCtx(r.left, r.bottom+4, items);
+}
+function renameChapter(old){
+  showModal(`<h2>章の名前 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2><div class="fg"><input type="text" id="ch-name" value="${esc(old)}"></div><div class="mact"><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>`,()=>{
+    const inp=document.getElementById('ch-name');inp.focus();inp.select();
+    inp.addEventListener('input',()=>{ const nv=(inp.value||'').trim(); if(!nv||nv===old||S.chapters.includes(nv))return;
+      // 章名を全カード/レイヤーに反映
+      S.chapters=S.chapters.map(c=>c===old?nv:c);
+      Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if(c.chapters)c.chapters=c.chapters.map(x=>x===old?nv:x); }));
+      S.clues.forEach(c=>{ if(c.chapters)c.chapters=c.chapters.map(x=>x===old?nv:x); });
+      S.layers.forEach(l=>{ if(l.chapter===old)l.chapter=nv; });
+      if(S.chapter===old)S.chapter=nv;
+      old=nv; setChapter(nv);
+    });
+    inp.onkeydown=e=>{if(e.key==='Enter')hideModal();};
+  });
+}
+function deleteChapter(ch){
+  if(S.chapters.length<=1)return;
+  if(!confirm('章「'+ch+'」を削除しますか？（カードやレイヤーは残り、この章タグだけ外れます）'))return;
+  S.chapters=S.chapters.filter(c=>c!==ch);
+  Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if(c.chapters)c.chapters=c.chapters.filter(x=>x!==ch); }));
+  S.clues.forEach(c=>{ if(c.chapters)c.chapters=c.chapters.filter(x=>x!==ch); });
+  S.layers.forEach(l=>{ if(l.chapter===ch)l.chapter=null; });
+  hideModal(); setChapter(S.chapters[0]);
+}
 
 let _uid=0;
 const uid=()=>'n'+(++_uid)+'_'+Math.random().toString(36).slice(2,5);
@@ -738,7 +801,7 @@ function layerById(id){return S.layers.find(l=>l.id===id);}
 function switchLayer(id){ switchBoard(id); }   // each layer is its own canvas
 function addLayer(name){
   const id='ly'+uid();
-  S.layers.push({id,name:(name||'').trim()||('レイヤー'+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length]});
+  S.layers.push({id,name:(name||'').trim()||('レイヤー'+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length],chapter:curChapterForNew()||null});
   S.boards[id]=BLANK_BOARD();          // adding a layer = a fresh blank diagram
   renderSidebar(); scheduleCommit();
   return id;
@@ -802,12 +865,13 @@ function autoLayerTag(card){
   if((card.desc||'').includes(tag))return;
   card.desc=((card.desc||'').trim()? card.desc+' ':'')+tag;
 }
-// 解説は「同じカード（同名）」で全レイヤー・全疑問ボード＋手がかりパレットに共有される
+// 解説・章タグは「同じカード（同名）」で全レイヤー・全疑問ボード＋手がかりパレットに共有される
 function syncCardByName(card){
   const nm=(card.name||'').trim(); if(!nm)return;
   saveActiveBoard();
-  Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if(c!==card&&(c.name||'').trim()===nm)c.desc=card.desc; }));
-  S.clues.forEach(cl=>{ if((cl.name||'').trim()===nm)cl.desc=card.desc; });
+  const chs=(card.chapters||[]).slice();
+  Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>{ if(c!==card&&(c.name||'').trim()===nm){c.desc=card.desc;c.chapters=chs.slice();} }));
+  S.clues.forEach(cl=>{ if((cl.name||'').trim()===nm){cl.desc=card.desc;cl.chapters=chs.slice();} });
 }
 // 同名カードを全ボード横断で改名（カードの同一性は名前で繋がっているため）
 function renameCardEverywhere(oldName,newName){
@@ -1068,7 +1132,7 @@ function placeCardOnCanvas(srcCard, fromBoard, x, y){
       // 同一カードとして配置：解説・属性も共有してコピー
       tgt={id:uid(),x:0,y:0,w:srcCard.w||150,name:srcCard.name,sub:srcCard.sub||'',color:srcCard.color,
         image:srcCard.image||null,icon:srcCard.icon,shape:srcCard.shape||'rect',desc:srcCard.desc||'',textScale:srcCard.textScale||1,
-        key:srcCard.key||false,zoneIds:[],linkBoard:srcCard.linkBoard,attr:srcCard.attr};
+        key:srcCard.key||false,zoneIds:[],linkBoard:srcCard.linkBoard,attr:srcCard.attr,chapters:(srcCard.chapters||[]).slice()};
       S.cards.push(tgt); created=true;
     }
   }
@@ -1083,7 +1147,8 @@ function placeQuestionOnCanvas(qid,x,y){
   const q=S.questions.find(q=>q.id===qid); if(!q)return;
   const w=170;
   const card={id:uid(),x:clampW(x-w/2),y:clampW(y-44),w,name:q.title||'疑問',sub:'',color:ATTRS.question.color,
-    image:null,icon:'❓',shape:'rect',desc:'',textScale:1,key:false,zoneIds:[],linkBoard:qid,attr:'question'};
+    image:null,icon:'❓',shape:'rect',desc:'',textScale:1,key:false,zoneIds:[],linkBoard:qid,attr:'question',chapters:[]};
+  tagChapter(card);
   S.cards.push(card);autoLayerTag(card);S.selection=[card.id];renderAll();
 }
 function openLinkBoard(boardId){
@@ -1129,7 +1194,7 @@ function buildLayerSection(t){
   t.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
   if(S.showLayers){
     t.appendChild(addItemEl('＋','レイヤー（別の図）を追加',promptAddLayer));
-    S.layers.forEach(l=>t.appendChild(makeLayerItem(l))); // each layer = its own canvas; layer 1 (id 'main') is the first entry
+    S.layers.filter(layerInChapter).forEach(l=>t.appendChild(makeLayerItem(l))); // 現在の章のレイヤーのみ（無タグは全章表示）
   }
 }
 function buildClueSection(t){
@@ -1161,25 +1226,35 @@ function cardEntries(){
   entries.sort((a,b)=>{ let ia=order.indexOf(a.key), ib=order.indexOf(b.key); if(ia<0)ia=1e9; if(ib<0)ib=1e9; return ia-ib; });
   return entries;
 }
-// 属性フィルタチップ（全/人物/手がかり/場所/疑問伏線）
-function attrChipsRow(){
+// チップ行の汎用
+function chipRow(opts,active,onPick){
   const w=document.createElement('div');
-  w.style.cssText='display:flex;flex-wrap:wrap;gap:4px;padding:2px 2px 7px;pointer-events:auto';
-  const mk=(k,label,color)=>{
-    const on=(S.cardFilter||'all')===k;
-    const b=document.createElement('button');b.type='button';b.textContent=label;
-    b.style.cssText='font-size:10.5px;padding:3px 9px;border-radius:11px;cursor:pointer;font-family:inherit;border:1px solid '+(color||'#7a7ab0')+';background:'+(on?(color||'#7a7ab0'):'transparent')+';color:'+(on?'#101024':'#cfcfe6')+';font-weight:'+(on?'700':'400');
-    b.onclick=()=>{S.cardFilter=k;renderSidebar();};
-    return b;
-  };
-  w.appendChild(mk('all','全',null));
-  Object.entries(ATTRS).forEach(([k,a])=>w.appendChild(mk(k,a.label,a.color)));
+  w.style.cssText='display:flex;flex-wrap:wrap;gap:4px;padding:2px 2px 6px;pointer-events:auto';
+  opts.forEach(o=>{
+    const on=active===o.k;
+    const b=document.createElement('button');b.type='button';b.textContent=o.label;
+    const col=o.color||'#7a7ab0';
+    b.style.cssText='font-size:10.5px;padding:3px 9px;border-radius:11px;cursor:pointer;font-family:inherit;border:1px solid '+col+';background:'+(on?col:'transparent')+';color:'+(on?'#101024':'#cfcfe6')+';font-weight:'+(on?'700':'400');
+    b.onclick=()=>onPick(o.k);
+    w.appendChild(b);
+  });
   return w;
 }
-// 統一カードセクション: 疑問・伏線 / 人物 / 手がかり / 場所 をひとつの一覧に（属性で絞り込み可）
+// 章フィルタチップ（全章/1章/2章…）
+function chapterChipsRow(){
+  const opts=[{k:'__all',label:'全章',color:'#9a9ad0'}].concat(S.chapters.map(ch=>({k:ch,label:ch,color:'#7a5aff'})));
+  return chipRow(opts,S.chapter,setChapter);
+}
+// 属性フィルタチップ（全/人物/手がかり/場所/疑問伏線）
+function attrChipsRow(){
+  const opts=[{k:'all',label:'全',color:null}].concat(Object.entries(ATTRS).map(([k,a])=>({k,label:a.label,color:a.color})));
+  return chipRow(opts,S.cardFilter||'all',k=>{S.cardFilter=k;renderSidebar();});
+}
+// 統一カードセクション: 疑問・伏線 / 人物 / 手がかり / 場所 をひとつの一覧に（章＋属性で絞り込み）
 function buildUnifiedSection(t){
   t.appendChild(sectionRow('カード',S.showCards,()=>{S.showCards=!S.showCards;renderSidebar();}));
   if(!S.showCards)return;
+  t.appendChild(chapterChipsRow());
   t.appendChild(attrChipsRow());
   t.appendChild(addItemEl('＋','カードを追加（属性を選択）',addCard));
   const f=S.cardFilter||'all';
@@ -1187,16 +1262,22 @@ function buildUnifiedSection(t){
     S.questions.forEach(q=>t.appendChild(makeBoardItem({id:q.id,title:q.title,ico:'❓',isQ:true})));
     collectKeyCards().forEach(k=>t.appendChild(makeKeyItem(k))); // 🔑（手がかり以外のキー）
   }
-  cardEntries().forEach(v=>{ const at=attrOf(v.card); if(f==='all'||f===at)t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)); });
+  cardEntries().forEach(v=>{ const at=attrOf(v.card); if((f==='all'||f===at)&&inChapter(v.card))t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)); });
   if(f==='all'||f==='clue'){
-    // まだどのボードにも置かれていない手がかり（パレット）も一覧に出す
     const placed=new Set(); Object.values(S.boards).forEach(bd=>(bd.cards||[]).forEach(c=>placed.add((c.name||'').trim())));
-    S.clues.forEach(c=>{ if(!placed.has((c.name||'').trim()))t.appendChild(makeClueItem(c)); });
+    S.clues.forEach(c=>{ if(!placed.has((c.name||'').trim())&&inChapter(c))t.appendChild(makeClueItem(c)); });
+  }
+  // 伏線セクション（最下部・章に関係なく常時表示）
+  const fk=cardEntries().filter(v=>isFukusen(v.card));
+  if(fk.length){
+    t.appendChild(sectionRow('🔮 伏線',true,()=>{}));
+    fk.forEach(v=>t.appendChild(makeCardListItem(v.card,v.boardId,v.boards)));
   }
 }
 function renderSidebar(){
   const L=document.getElementById('q-list'),R=document.getElementById('q-list-right');
   if(!L||!R)return;
+  const chBtn=document.getElementById('btn-chapter'); if(chBtn)chBtn.textContent='📖 '+(S.chapter==='__all'?'全章':S.chapter)+' ▾'; // 章ボタン表示を同期
   L.innerHTML='';R.innerHTML='';
   const mobile=window.matchMedia&&window.matchMedia('(max-width:760px)').matches;
   if(mobile){
@@ -1222,7 +1303,8 @@ function placeClueOnCanvas(clueId,x,y){
   // a key belongs to the entity → inherit it from the clue (or any same-named key card already on a layer)
   const isKey = !!c.key || (!!nm && Object.values(S.boards).some(bd=>(bd.cards||[]).some(cc=>(cc.name||'').trim()===nm&&cc.key)));
   const placed={id:uid(),x:x-(c.w||150)/2,y:y-45,w:c.w||150,name:c.name||'手がかり',sub:c.sub||'',
-    color:c.color||'#ffa94d',image:c.image||null,icon:c.icon||'🔍',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true,key:true,attr:'clue'};
+    color:c.color||'#ffa94d',image:c.image||null,icon:c.icon||'🔍',shape:c.shape||'rect',desc:c.desc||'',textScale:c.textScale||1,zoneIds:[],fromClue:true,key:true,attr:'clue',chapters:(c.chapters||[]).slice()};
+  tagChapter(placed);
   S.cards.push(placed);
   autoLayerTag(placed); syncCardByName(placed);
   renderAll();
@@ -2106,8 +2188,9 @@ function createCardWithAttr(attr){
   const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
   const a=ATTRS[attr]||ATTRS.person;
   const card={id:uid(),x:c.x-75,y:c.y-45,w:150,name:a.defName||'新しいカード',sub:'',
-    color:a.color,image:null,icon:a.icon,shape:'rect',desc:'',textScale:1,zoneIds:[],attr};
+    color:a.color,image:null,icon:a.icon,shape:'rect',desc:'',textScale:1,zoneIds:[],attr,chapters:[]};
   if(attr==='clue')card.key=true; // 手がかりは自動で🔑
+  tagChapter(card);               // 現在の章タグを自動付与
   S.cards.push(card);
   autoLayerTag(card);
   renderAll();
@@ -2222,6 +2305,7 @@ function openCardEditor(id){
       </div>
     </div>
     <div class="fg"><label>幅 (px)</label><input type="number" id="ed-w" value="${card.w||150}" min="80" max="600" style="width:80px"></div>
+    <div class="fg"><label>章タグ（所属する章＝表示される章。伏線は章に関係なく常時表示）</label><div id="ed-chapters" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div></div>
     <div class="fg"><label>解説（同じカードの全レイヤーで共有・Ctrl+Enterで改行）</label><textarea id="ed-desc">${esc(card.desc)}</textarea>${layerChipsHtml()}</div>
     <div class="mact">
       <button class="btn btn-d" id="ed-del">🗑 削除</button>
@@ -2233,6 +2317,21 @@ function openCardEditor(id){
     buildIconGrid('ed-icon-grid',card.icon,v=>{document.getElementById('ed-cicon').value=v;card.icon=v;renderAll();scheduleCommit();});
     wireLayerChips('ed-desc');
     const $=x=>document.getElementById(x);
+    // 章タグのチップ（各章＋伏線）。トグルで card.chapters を編集し同名カードへ共有
+    (function(){
+      const box=$('ed-chapters'); if(!box)return;
+      const render=()=>{ box.innerHTML=''; card.chapters=card.chapters||[];
+        const mk=(tag,color)=>{ const on=card.chapters.includes(tag);
+          const b=document.createElement('button');b.type='button';b.textContent=(on?'✓ ':'＋ ')+tag;
+          b.style.cssText='font-size:12px;padding:5px 11px;border-radius:13px;cursor:pointer;font-family:inherit;border:1px solid '+color+';background:'+(on?color:'transparent')+';color:'+(on?'#101024':'#cfcfe6');
+          b.onclick=()=>{ const i=card.chapters.indexOf(tag); if(i>=0)card.chapters.splice(i,1); else card.chapters.push(tag);
+            syncCardByName(card); render(); renderAll(); scheduleCommit(); };
+          box.appendChild(b); };
+        S.chapters.forEach(ch=>mk(ch,'#7a5aff'));
+        mk(FUKUSEN,'#cc5de8');
+      };
+      render();
+    })();
     // すべてライブ反映（自動保存）
     let prevName=card.name;
     $('ed-attr').onchange=()=>{ card.attr=$('ed-attr').value; card.color=ATTRS[card.attr].color; $('ed-color').value=card.color;
@@ -2893,6 +2992,7 @@ document.addEventListener('paste',e=>{
 //  MENU BUTTONS
 // ═══════════════════════════════════════
 document.getElementById('btn-add-card').onclick=addCard;
+document.getElementById('btn-chapter').onclick=openChapterMenu;
 document.getElementById('btn-undo').onclick=undo;
 document.getElementById('btn-redo').onclick=redo;
 document.getElementById('btn-align').onclick=function(){
@@ -2943,6 +3043,7 @@ function saveFile(){
     docTitle:S.docTitle,
     currentBoard:S.currentBoard,
     layers:S.layers,
+    chapters:S.chapters,chapter:S.chapter,
     questions:S.questions,
     clues:S.clues,
     cardOrder:S.cardOrder,
@@ -2978,6 +3079,8 @@ function applyDocData(d){
   S.showDesc=d.showDesc!==false;
   S.clues=d.clues||[];
   S.cardOrder=d.cardOrder||[];
+  S.chapters=(Array.isArray(d.chapters)&&d.chapters.length)?d.chapters.slice():['1章'];
+  S.chapter=(d.chapter&&(d.chapter==='__all'||S.chapters.includes(d.chapter)))?d.chapter:S.chapters[0];
   S.docTitle=d.docTitle||'';
   const _dt=document.getElementById('doc-title'); if(_dt)_dt.value=S.docTitle;
   S.showMain=d.showMain!==false;
@@ -3015,6 +3118,7 @@ function applyDocData(d){
 function currentDocData(){
   saveActiveBoard();
   return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,layers:S.layers,
+    chapters:S.chapters,chapter:S.chapter,
     questions:S.questions,clues:S.clues,cardOrder:S.cardOrder,docTitle:S.docTitle,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
 // ── LOAD ──
