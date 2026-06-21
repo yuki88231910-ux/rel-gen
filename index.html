@@ -486,7 +486,7 @@ function setChapter(ch){
   if(ch!=='__all'){
     const cur=layerById(S.currentBoard);
     if(cur && cur.chapter && cur.chapter!==ch){
-      const tgt=S.layers.find(l=>l.chapter===ch)||S.layers.find(l=>!l.chapter);
+      const tgt=S.layers.find(l=>l.chapter===ch&&isMainLayer(l))||S.layers.find(l=>l.chapter===ch)||S.layers.find(l=>!l.chapter);
       if(tgt && tgt.id!==S.currentBoard){ switchBoard(tgt.id); }
     }
   }
@@ -795,22 +795,30 @@ function ensureLayers(mainName){
   if(!Array.isArray(S.layers))S.layers=[];
   if(!S.layers.some(l=>l.id==='main'))
     S.layers.unshift({id:'main',name:(mainName||'レイヤー1'),color:LAYER_COLORS[0]});
-  S.layers.forEach(l=>{ if(!S.boards[l.id])S.boards[l.id]=BLANK_BOARD(); });
+  S.layers.forEach(l=>{ if(!S.boards[l.id])S.boards[l.id]=BLANK_BOARD(); if(!l.kind)l.kind='series'; }); // kind: 'series'(時系列) / 'main'(メイン)
 }
 function layerById(id){return S.layers.find(l=>l.id===id);}
+function isMainLayer(l){return !!l&&l.kind==='main';}
 function switchLayer(id){ switchBoard(id); }   // each layer is its own canvas
-function addLayer(name){
+function addLayer(name,kind){
   const id='ly'+uid();
-  S.layers.push({id,name:(name||'').trim()||('レイヤー'+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length],chapter:curChapterForNew()||null});
+  const main=kind==='main';
+  S.layers.push({id,name:(name||'').trim()||((main?'メイン':'レイヤー')+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length],chapter:curChapterForNew()||null,kind:(main?'main':'series')});
   S.boards[id]=BLANK_BOARD();          // adding a layer = a fresh blank diagram
   renderSidebar(); scheduleCommit();
   return id;
 }
 function renameLayer(id){
   const ly=layerById(id);if(!ly)return;
-  showModal(`<h2>レイヤー名 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2><div class="fg"><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
+  const chOpts=`<option value="">章なし（全章に表示）</option>`+S.chapters.map(ch=>`<option value="${esc(ch)}"${ly.chapter===ch?' selected':''}>${esc(ch)}</option>`).join('');
+  showModal(`<h2>レイヤー設定 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2>
+    <div class="fg"><label>レイヤー名</label><input type="text" id="ly-name" value="${esc(ly.name)}"></div>
+    <div class="fg"><label>種類</label><select id="ly-kind"><option value="series"${ly.kind!=='main'?' selected':''}>⏱ 時系列レイヤー</option><option value="main"${ly.kind==='main'?' selected':''}>◆ メインレイヤー</option></select></div>
+    <div class="fg"><label>章</label><select id="ly-chapter">${chOpts}</select></div>
     <div class="mact"><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();inp.select();
+    document.getElementById('ly-kind').onchange=e=>{ ly.kind=(e.target.value==='main')?'main':'series'; renderSidebar(); scheduleCommit(); };
+    document.getElementById('ly-chapter').onchange=e=>{ ly.chapter=e.target.value||null; render(); renderSidebar(); scheduleCommit(); };
     inp.addEventListener('input',()=>{
       const nv=(inp.value||'').trim(); if(!nv||nv===ly.name)return;
       const oldTag='[['+ly.name+']]', newTag='[['+nv+']]';
@@ -1040,6 +1048,12 @@ function sectionRow(label,visible,onToggle){
 function addItemEl(label,title,onClick){
   const a=document.createElement('div');a.className='q-item q-add-item';a.textContent='＋';a.title=title;a.onclick=onClick;return a;
 }
+// 折りたたみ無しの小見出し（レイヤーのメイン/時系列グループ分け用）
+function subHeaderRow(label){
+  const d=document.createElement('div');d.className='q-subhead';d.textContent=label;
+  d.style.cssText='padding:6px 4px 2px;font-size:11px;font-weight:700;letter-spacing:.04em;color:#9a9ad0;opacity:.9;cursor:default';
+  return d;
+}
 function keyTagEl(){const s=document.createElement('span');s.textContent='🔑';s.title='キー';s.style.cssText='flex:0 0 auto;font-size:13px;margin:0 2px';return s;}
 // 名前が長い場合はフォントを自動縮小して全文表示。
 // 半角文字は0.55文字分として実効幅で計算（サイドバー幅いっぱい≒205pxを使う）
@@ -1074,7 +1088,7 @@ function makeClueItem(c){
 let _dragCardSrc=null; // {card, fromBoard} while dragging a card from the sidebar list
 function makeLayerItem(l){ // l: {id, name, color} — each layer is its own canvas (board)
   const it=document.createElement('div');it.className='q-item'+(S.currentBoard===l.id?' active':'');
-  const ico=document.createElement('span');ico.className='q-ico';ico.textContent='●';ico.style.color=l.color||'#9aa3b2';
+  const ico=document.createElement('span');ico.className='q-ico';ico.textContent=isMainLayer(l)?'◆':'●';ico.style.color=l.color||'#9aa3b2';ico.title=isMainLayer(l)?'メインレイヤー':'時系列レイヤー';
   const ti=document.createElement('span');ti.className='q-title';ti.textContent=l.name;ti.title=l.name;fitTitle(ti,l.name);
   it.appendChild(ico);it.appendChild(ti);
   const del=document.createElement('span');del.className='q-del';del.textContent='✕';del.title='削除';
@@ -1155,12 +1169,14 @@ function openLinkBoard(boardId){
   if(boardId&&S.boards[boardId])switchBoard(boardId);
   else alert('リンク先の疑問が見つかりません（削除された可能性があります）。');
 }
-function promptAddLayer(){
-  showModal(`<h2>レイヤー（別の図）を追加</h2><div class="fg"><label>レイヤー名（時点）</label><input type="text" id="ly-name" placeholder="例: 第2章 / 事件発生後"></div>
-    <div class="fg" style="font-size:12px;color:#9aa3b2">新しい白紙の図が追加されます。同名のカードを置けば、解説のレイヤータグからその図へジャンプできます。</div>
+function promptAddLayer(kind){
+  const main=kind==='main';
+  const chLabel=(S.chapter&&S.chapter!=='__all')?`<div class="fg" style="font-size:12px;color:#7a5aff">📖 現在の章「${esc(S.chapter)}」に追加されます。</div>`:'';
+  showModal(`<h2>${main?'◆ メインレイヤーを追加':'⏱ 時系列レイヤー（別の図）を追加'}</h2><div class="fg"><label>${main?'メインレイヤー名':'レイヤー名（時点）'}</label><input type="text" id="ly-name" placeholder="${main?'例: 全体図 / 第1章まとめ':'例: 第2章 / 事件発生後'}"></div>
+    <div class="fg" style="font-size:12px;color:#9aa3b2">${main?'時系列レイヤーのカードをドラッグで配置して、全体をまとめられる図です。':'新しい白紙の図が追加されます。'}同名のカードを置けば、解説のレイヤータグからその図へジャンプできます。</div>${chLabel}
     <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">追加</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();
-    const ok=()=>{const id=addLayer(inp.value);hideModal();switchLayer(id);};
+    const ok=()=>{const id=addLayer(inp.value,kind);hideModal();switchLayer(id);};
     document.getElementById('ly-ok').onclick=ok;inp.onkeydown=e=>{if(e.key==='Enter')ok();};
   });
 }
@@ -1190,11 +1206,19 @@ function buildQuestionSection(t){
     collectKeyCards().forEach(k=>t.appendChild(makeKeyItem(k))); // 🔑 key cards across layers → click to jump
   }
 }
-function buildLayerSection(t){
-  t.appendChild(sectionRow('時系列レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
+function buildLayerSection(t,withChips){
+  t.appendChild(sectionRow('レイヤー',S.showLayers,()=>{S.showLayers=!S.showLayers;renderSidebar();}));
   if(S.showLayers){
-    t.appendChild(addItemEl('＋','レイヤー（別の図）を追加',promptAddLayer));
-    S.layers.filter(layerInChapter).forEach(l=>t.appendChild(makeLayerItem(l))); // 現在の章のレイヤーのみ（無タグは全章表示）
+    if(withChips)t.appendChild(chapterChipsRow()); // 章でソート：現在章のレイヤーのみ表示（無タグは全章表示）
+    const inCh=S.layers.filter(layerInChapter);
+    // ◆ メインレイヤー（時系列レイヤーのカードを配置してまとめる図）
+    t.appendChild(subHeaderRow('◆ メインレイヤー'));
+    t.appendChild(addItemEl('＋','メインレイヤーを追加',()=>promptAddLayer('main')));
+    inCh.filter(isMainLayer).forEach(l=>t.appendChild(makeLayerItem(l)));
+    // ⏱ 時系列レイヤー
+    t.appendChild(subHeaderRow('⏱ 時系列レイヤー'));
+    t.appendChild(addItemEl('＋','時系列レイヤーを追加',()=>promptAddLayer('series')));
+    inCh.filter(l=>!isMainLayer(l)).forEach(l=>t.appendChild(makeLayerItem(l)));
   }
 }
 function buildClueSection(t){
@@ -1285,9 +1309,9 @@ function renderSidebar(){
     buildLayerSection(L);
     buildUnifiedSection(L);
   } else {
-    // desktop: 右=時系列レイヤーのみ / 左=統一カード一覧（人物・手がかり・場所・疑問伏線）
+    // desktop: 右=レイヤー（メイン＋時系列・章チップ付き） / 左=統一カード一覧（人物・手がかり・場所・疑問伏線）
     buildUnifiedSection(L);
-    buildLayerSection(R);
+    buildLayerSection(R,true);
   }
 }
 let _dragClueId=null;
