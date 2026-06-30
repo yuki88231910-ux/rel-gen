@@ -597,15 +597,29 @@ function openChapterMenu(ev){
   items.push({icon:'📚',label:'全章を表示',action:()=>setChapter('__all')});
   S.chapters.forEach(ch=>items.push({icon:(S.chapter===ch?'✔':'　'),label:ch,action:()=>setChapter(ch)}));
   items.push('sep');
-  items.push({icon:'＋',label:'章を追加',action:()=>{
-    const n=S.chapters.length+1, name=n+'章';
-    if(!S.chapters.includes(name))S.chapters.push(name);
-    setChapter(name);
-  }});
+  items.push({icon:'＋',label:'章を追加',action:promptAddChapter});
   if(S.chapter!=='__all')items.push({icon:'✏️',label:'この章の名前を変更',action:()=>renameChapter(S.chapter)});
   if(S.chapter!=='__all'&&S.chapters.length>1)items.push({icon:'🗑',label:'この章を削除',danger:true,action:()=>deleteChapter(S.chapter)});
   const r=ev.currentTarget.getBoundingClientRect();
   showCtx(r.left, r.bottom+4, items);
+}
+// 章を追加：名称を入力してから追加（既定は「N章」）
+function promptAddChapter(){
+  const def=(S.chapters.length+1)+'章';
+  showModal(`<h2>章を追加</h2>
+    <div class="fg"><label>章の名前</label><input type="text" id="ch-name" value="${esc(def)}" placeholder="例: 2章 / 第二幕"></div>
+    <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ch-ok">追加</button></div>`,()=>{
+    const inp=document.getElementById('ch-name');inp.focus();inp.select();
+    const ok=()=>{
+      const nm=(inp.value||'').trim();
+      if(!nm){inp.focus();return;}                 // 空名は追加しない
+      if(!S.chapters.includes(nm))S.chapters.push(nm); // 既存と同名ならその章へ切替するだけ
+      hideModal();
+      setChapter(nm);
+    };
+    document.getElementById('ch-ok').onclick=ok;
+    inp.onkeydown=e=>{if(e.key==='Enter')ok();};
+  });
 }
 function renameChapter(old){
   showModal(`<h2>章の名前 <span style="font-size:11px;color:#9a9ad0;font-weight:400">（自動保存）</span></h2><div class="fg"><input type="text" id="ch-name" value="${esc(old)}"></div><div class="mact"><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>`,()=>{
