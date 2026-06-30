@@ -3152,9 +3152,11 @@ document.getElementById('bg-sel').onchange=function(){
 };
 
 document.getElementById('btn-del-all').onclick=()=>{
-  if(!confirm('すべての要素を削除しますか？この操作は元に戻せません。'))return;
-  if(!confirm('本当に削除します。よろしいですか？（最終確認）'))return;
-  S.cards=[];S.arrows=[];S.branches=[];S.zones=[];S.subtitles=[];S.images=[];renderAll(); // clears the current layer's canvas (layers themselves are kept)
+  if(!confirm('すべてを削除してまっさらな状態にしますか？\nタイトル・カード・レイヤー・疑問・手がかり・章をすべて消去します。この操作は元に戻せません。'))return;
+  if(!confirm('本当にすべて削除します。よろしいですか？（最終確認）'))return;
+  applyDocData({});      // 新規同様の空ドキュメントに初期化（タイトルも空・レイヤーは1つ・章は1章・履歴もリセット）
+  autosaveLocalNow();    // 空の状態をローカル保存（リロードで旧データが復元されないように）
+  cloudSaveNow();        // ログイン中はクラウドも空に同期（未ログインなら何もしない）
 };
 
 // ── SAVE ──
