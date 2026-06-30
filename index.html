@@ -900,10 +900,12 @@ function ensureLayers(mainName){
 function layerById(id){return S.layers.find(l=>l.id===id);}
 function isMainLayer(l){return !!l&&l.kind==='main';}
 function switchLayer(id){ switchBoard(id); }   // each layer is its own canvas
-function addLayer(name,kind){
+function addLayer(name,kind,chapter){
   const id='ly'+uid();
   const main=kind==='main';
-  S.layers.push({id,name:(name||'').trim()||((main?'メイン':'レイヤー')+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length],chapter:curChapterForNew()||null,kind:(main?'main':'series')});
+  // chapter 未指定なら現在の章、指定があればそれ（''＝章なし=全章表示）
+  const ch=(chapter===undefined)?(curChapterForNew()||null):(chapter||null);
+  S.layers.push({id,name:(name||'').trim()||((main?'メイン':'レイヤー')+(S.layers.length+1)),color:LAYER_COLORS[S.layers.length%LAYER_COLORS.length],chapter:ch,kind:(main?'main':'series')});
   S.boards[id]=BLANK_BOARD();          // adding a layer = a fresh blank diagram
   renderSidebar(); scheduleCommit();
   return id;
@@ -1271,12 +1273,20 @@ function openLinkBoard(boardId){
 }
 function promptAddLayer(kind){
   const main=kind==='main';
-  const chLabel=(S.chapter&&S.chapter!=='__all')?`<div class="fg" style="font-size:12px;color:#7a5aff">📖 現在の章「${esc(S.chapter)}」に追加されます。</div>`:'';
+  const curCh=(S.chapter&&S.chapter!=='__all')?S.chapter:''; // 既定は現在表示中の章（全章表示中は「章なし」）
+  const chOpts=`<option value="">章なし（全章に表示）</option>`+S.chapters.map(ch=>`<option value="${esc(ch)}"${ch===curCh?' selected':''}>${esc(ch)}</option>`).join('');
   showModal(`<h2>${main?'◆ メインレイヤーを追加':'⏱ 時系列レイヤー（別の図）を追加'}</h2><div class="fg"><label>${main?'メインレイヤー名':'レイヤー名（時点）'}</label><input type="text" id="ly-name" placeholder="${main?'例: 全体図 / 第1章まとめ':'例: 第2章 / 事件発生後'}"></div>
-    <div class="fg" style="font-size:12px;color:#9aa3b2">${main?'時系列レイヤーのカードをドラッグで配置して、全体をまとめられる図です。':'新しい白紙の図が追加されます。'}同名のカードを置けば、解説のレイヤータグからその図へジャンプできます。</div>${chLabel}
+    <div class="fg"><label>章</label><select id="ly-ch">${chOpts}</select></div>
+    <div class="fg" style="font-size:12px;color:#9aa3b2">${main?'時系列レイヤーのカードをドラッグで配置して、全体をまとめられる図です。':'新しい白紙の図が追加されます。'}選んだ章にレイヤーが追加されます。</div>
     <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button><button class="btn btn-p" id="ly-ok">追加</button></div>`,()=>{
     const inp=document.getElementById('ly-name');inp.focus();
-    const ok=()=>{const id=addLayer(inp.value,kind);hideModal();switchLayer(id);};
+    const ok=()=>{
+      const ch=document.getElementById('ly-ch').value;          // ''＝章なし / それ以外は章名
+      const id=addLayer(inp.value,kind,ch);
+      hideModal();
+      if(ch && S.chapter!=='__all' && S.chapter!==ch) setChapter(ch); // 追加先の章へ表示を合わせて新レイヤーが見えるように
+      switchLayer(id);                                          // 新しいレイヤーへ移動
+    };
     document.getElementById('ly-ok').onclick=ok;inp.onkeydown=e=>{if(e.key==='Enter')ok();};
   });
 }
