@@ -2729,6 +2729,17 @@ function sendCardToBack(id){
   if(el){ const first=elems.querySelector('.card[data-id]'); if(first&&first!==el)elems.insertBefore(el,first); }
   scheduleCommit();                     // 並びを保存（リロード/ボード再描画後も最背面を維持）
 }
+// カードを最前面へ。S.cards 末尾ほど前面に描画されるので末尾へ移動する。
+function sendCardToFront(id){
+  const i=S.cards.findIndex(c=>c.id===id);
+  if(i<0||i===S.cards.length-1)return;  // 見つからない or すでに最前面
+  const [c]=S.cards.splice(i,1);
+  S.cards.push(c);
+  // 生成済みDOMも最後のカードの直後へ移動して即時反映
+  const el=elems.querySelector(`.card[data-id="${id}"]`);
+  if(el){ const cards=elems.querySelectorAll('.card[data-id]'); const last=cards[cards.length-1]; if(last&&last!==el)elems.insertBefore(el,last.nextSibling); }
+  scheduleCommit();                     // 並びを保存（リロード/ボード再描画後も最前面を維持）
+}
 function onCardCtx(e,id){
   const card=cardById(id);if(!card)return;
   const items=[];
@@ -2736,6 +2747,7 @@ function onCardCtx(e,id){
   showCtx(e.clientX,e.clientY,items.concat([
     {icon:'✏️',label:'編集',action:()=>openCardEditor(id)},
     {icon:'📋',label:'複製',action:()=>duplicateCard(id)},
+    {icon:'⬆',label:'最前面へ移動',action:()=>sendCardToFront(id)},
     {icon:'⬇',label:'最背面へ移動',action:()=>sendCardToBack(id)},
     'sep',
     {slider:true,label:'カード全体サイズ',min:.3,max:4,step:.05,value:card.scale||1,oninput:v=>{card.scale=v;render();}},
