@@ -2718,6 +2718,17 @@ function showCtx(x,y,items){
 }
 function hideCtx(){ctxMenu.style.display='none';}
 
+// カードを最背面へ。重なり順は S.cards の配列順（先頭ほど後ろに描画）なので先頭へ移動する。
+function sendCardToBack(id){
+  const i=S.cards.findIndex(c=>c.id===id);
+  if(i<=0)return;                       // 見つからない or すでに最背面
+  const [c]=S.cards.splice(i,1);
+  S.cards.unshift(c);
+  // renderCardDOMs は既存要素を並べ替えないため、生成済みDOMの重なり順も手動で即時反映
+  const el=elems.querySelector(`.card[data-id="${id}"]`);
+  if(el){ const first=elems.querySelector('.card[data-id]'); if(first&&first!==el)elems.insertBefore(el,first); }
+  scheduleCommit();                     // 並びを保存（リロード/ボード再描画後も最背面を維持）
+}
 function onCardCtx(e,id){
   const card=cardById(id);if(!card)return;
   const items=[];
@@ -2725,6 +2736,7 @@ function onCardCtx(e,id){
   showCtx(e.clientX,e.clientY,items.concat([
     {icon:'✏️',label:'編集',action:()=>openCardEditor(id)},
     {icon:'📋',label:'複製',action:()=>duplicateCard(id)},
+    {icon:'⬇',label:'最背面へ移動',action:()=>sendCardToBack(id)},
     'sep',
     {slider:true,label:'カード全体サイズ',min:.3,max:4,step:.05,value:card.scale||1,oninput:v=>{card.scale=v;render();}},
     {slider:true,label:'文字サイズ',min:.5,max:3,step:.05,value:card.textScale||1,oninput:v=>{card.textScale=v;render();}},
