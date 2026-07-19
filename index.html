@@ -289,6 +289,15 @@ body.filemenu-open #menu-backdrop{display:block}
 #canvas-wrap.bg-board .card.attr-clue .card-name,#canvas-wrap.bg-board .card.attr-place .card-name{color:#2a2622!important;text-shadow:none!important;font-family:'UD デジタル 教科書体 N-R','Klee One','Segoe Print',cursive!important}
 #canvas-wrap.bg-board .card.attr-clue .card-sub,#canvas-wrap.bg-board .card.attr-place .card-sub{color:#6a655c!important;font-family:'UD デジタル 教科書体 N-R','Klee One','Segoe Print',cursive!important}
 #canvas-wrap.bg-board .card.attr-clue .card-icon-wrap,#canvas-wrap.bg-board .card.attr-place .card-icon-wrap{background:#efece2;border:1px solid #ddd8ca;padding:7px 17px;border-radius:1px}
+/* 人物で画像なし → 人影シルエット */
+#canvas-wrap.bg-board .card.silhouette .card-icon-wrap{
+  width:82%;min-height:84px;
+  background:#d9d4c4 url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 92'%3E%3Ccircle cx='50' cy='30' r='19' fill='%236b675a'/%3E%3Cpath d='M12 92 Q12 56 50 56 Q88 56 88 92 Z' fill='%236b675a'/%3E%3C/svg%3E") center/62% no-repeat}
+/* 疑問・伏線 → 新聞記事カード */
+#canvas-wrap.bg-board .card.attr-question{background:#f2eee2!important;border:1px solid #2b2620!important;border-radius:0!important;
+  box-shadow:inset 0 0 0 3px #f2eee2,inset 0 0 0 4px #2b2620,0 10px 18px rgba(30,12,2,.48)!important}
+#canvas-wrap.bg-board .card.attr-question .card-name{color:#171410!important;text-shadow:none!important;font-family:Georgia,'Times New Roman','Yu Mincho','MS PMincho',serif!important}
+#canvas-wrap.bg-board .card.attr-question .card-sub{color:#4a453c!important;font-family:Georgia,'Times New Roman','Yu Mincho','MS PMincho',serif!important}
 /* 解説 → 付箋（黄色い紙・手書き文字） */
 #canvas-wrap.bg-board .desc-box{background:linear-gradient(180deg,#fdef8d,#f6df67)!important;color:#4a3f14!important;border:0!important;border-radius:1px!important;
   box-shadow:0 7px 11px rgba(30,12,2,.35),0 1px 3px rgba(30,12,2,.25)!important;
@@ -1940,6 +1949,7 @@ function updateCardEl(el,card){
   }
   const iw=el.querySelector('.card-icon-wrap');
   const img=el.querySelector('.card-img');
+  el.classList.toggle('silhouette', S.boardMode && !card.image && attrOf(card)==='person'); // ボード：画像なし人物=人影
   if(card.image){
     iw.style.display='none';img.style.display='block';
     // only (re)assign src when it actually changes — avoids reloading/flicker on rapid re-renders (e.g. size slider)
@@ -1947,7 +1957,9 @@ function updateCardEl(el,card){
   } else {
     img.style.display='none';iw.style.display='block';
     if(img._src){img._src=null;img.removeAttribute('src');}
-    iw.textContent=card.icon||'✦';
+    let icoTxt=card.icon||'✦';
+    if(S.boardMode){const at=attrOf(card); if(at==='person')icoTxt=''; else if(at==='clue'||at==='place')icoTxt='？';} // ボード：人物=人影(CSS背景)・手がかり/場所=？
+    iw.textContent=icoTxt;
     iw.style.fontSize=(22*(card.textScale||1)*2)+'px'; // カード文字はデフォルト2倍（PC/モバイル共通）
   }
   el.classList.toggle('link-node',!!card.linkBoard); // 疑問へのリンクノードなら破線＋↗バッジ
@@ -2174,7 +2186,9 @@ function renderDescs(){
       rszDrag(e,{w:box.offsetWidth,sc:o.descScale||1},(s0,d)=>{ o.descScale=Math.min(3,Math.max(.5,s0.sc*(s0.w+d)/s0.w)); renderDescs(); }); });
     const bw=box.offsetWidth||120, bh=box.offsetHeight||40;
     // respect a desc the user has dragged; otherwise auto-place it to avoid overlapping cards/arrows/other descs
+    // 捜査ボードのカード付箋は既定でカード右下の辺に少しだけ接地する位置（動画の見た目）
     const off=(w.owner.descMoved&&w.owner.descOff) ? w.owner.descOff
+            : (S.boardMode&&w.kind==='card') ? {x:cardEffW(w.owner)/2*0.45, y:cardEffH(w.owner)/2-12}
             : pickDescOff(a, ownerRectOf(w.owner,w.kind), defaultDescOff(w.owner,w.kind), bw, bh, obstacles);
     const bx=a.x+off.x, by=a.y+off.y;
     box.style.left=bx+'px';box.style.top=by+'px';
