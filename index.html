@@ -259,6 +259,14 @@ body.filemenu-open #menu-backdrop{display:block}
   .branch{font-size:32px}
 }
 
+/* ══ 捜査ボードモード（コルク＋押しピン＋赤い糸） ══ */
+#canvas-wrap.bg-board{background-color:#b8874e}
+.pushpin{position:absolute;width:15px;height:15px;border-radius:50%;transform:translate(-50%,-55%);z-index:30;pointer-events:none;
+  background:radial-gradient(circle at 35% 30%,#ff8a80,#e53935 55%,#8e1410);
+  box-shadow:0 2px 3px rgba(0,0,0,.45),inset 0 -2px 3px rgba(0,0,0,.25)}
+.pushpin::after{content:'';position:absolute;left:50%;top:92%;width:2px;height:5px;background:linear-gradient(#888,#333);transform:translateX(-50%)}
+#canvas-wrap.bg-board .card{box-shadow:0 5px 9px rgba(0,0,0,.38)!important}  /* 紙が浮いた影 */
+
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
 #boot-screen{position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
   background:radial-gradient(circle at 50% 42%,#2c2458 0%,#161232 50%,#070611 100%);
@@ -467,6 +475,7 @@ input[type=checkbox],input[type=range]{accent-color:var(--w2k-sel)!important}
     <option value="dots">方眼ドット</option>
     <option value="plain">無地</option>
   </select>
+  <button class="mbtn" id="btn-board-mode" title="捜査ボードモード：コルクボードに押しピン、揺れる赤い糸">📌 ボード</button>
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-add-card">＋ カード追加</button>
   <button class="mbtn" id="btn-branch-mode">⑂ 分岐ノード</button>
@@ -557,6 +566,7 @@ const S = {
   // multi-board: each "疑問" (question) is its own diagram. 'main' is the root board.
   currentBoard:'main', questions:[], boards:{}, cardOrder:[], docTitle:'', cardFilter:'all',
   chapters:['1章'], chapter:'1章',  // 章（チャプター）モード。'__all'=全章表示
+  boardMode:false,   // 捜査ボードモード（コルク＋押しピン＋揺れる糸）
   clues:[], showMain:true, showQuestions:true, showClues:true, // 手がかり palette + sidebar toggles
   showCards:true, showLayers:true,                              // right-sidebar section toggles
   layers:[],            // 時系列レイヤー = それぞれ独立した図(キャンバス)の一覧(global)。各 id は S.boards のボード id。レイヤー1の id='main'
@@ -1585,6 +1595,70 @@ function getCP(x1,y1,x2,y2,curve){
 }
 
 // ═══════════════════════════════════════
+//  捜査ボードモード（コルク背景＋押しピン＋Verletロープ物理の"糸"）
+// ═══════════════════════════════════════
+const CORK_URL=(()=>{ const svg="<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.74  0 0 0 0 0.55  0 0 0 0 0.32  0 0 0 0.42 0'/></filter><rect width='180' height='180' fill='#c99a5f'/><rect width='180' height='180' filter='url(#c)'/></svg>"; return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")'; })();
+const _ropes=new Map();          // arrowId → [{x,y,ox,oy}...]  （揺れる糸の点。永続化しない）
+let _ropeRAF=null;
+// カード/分岐の"ピン位置"＝上端中央（糸はここに結ばれ、押しピンもここに描く）
+function nodePin(id){
+  const c=cardById(id); if(c)return{x:c.x+cardEffW(c)/2,y:c.y};
+  const b=branchById(id); if(b)return{x:b.x+20,y:b.y};
+  return null;
+}
+const ROPE_N=20, ROPE_DAMP=0.98, ROPE_GRAV=0.6, ROPE_SAG=1.045, ROPE_ITER=14;
+function stepRopes(){
+  if(!S.boardMode||!arrsG)return;
+  const groups={}; arrsG.querySelectorAll('g[data-id]').forEach(g=>groups[g.dataset.id]=g);
+  S.arrows.forEach(arr=>{
+    const a1=nodePin(arr.from), a2=nodePin(arr.to); if(!a1||!a2)return;
+    let R=_ropes.get(arr.id);
+    if(!R||R.length!==ROPE_N){ R=[]; for(let i=0;i<ROPE_N;i++){const t=i/(ROPE_N-1),x=a1.x+(a2.x-a1.x)*t,y=a1.y+(a2.y-a1.y)*t;R.push({x,y,ox:x,oy:y});} _ropes.set(arr.id,R); }
+    // 端点をピンに固定（速度を持ち込まない）
+    R[0].x=a1.x;R[0].y=a1.y;R[0].ox=a1.x;R[0].oy=a1.y;
+    R[ROPE_N-1].x=a2.x;R[ROPE_N-1].y=a2.y;R[ROPE_N-1].ox=a2.x;R[ROPE_N-1].oy=a2.y;
+    // Verlet積分（重力＋減衰）
+    for(let i=1;i<ROPE_N-1;i++){const p=R[i];const vx=(p.x-p.ox)*ROPE_DAMP,vy=(p.y-p.oy)*ROPE_DAMP;p.ox=p.x;p.oy=p.y;p.x+=vx;p.y+=vy+ROPE_GRAV;}
+    // 距離拘束（少したるませて自然な垂れ下がり）
+    const dist=Math.hypot(a2.x-a1.x,a2.y-a1.y), seg=(dist*ROPE_SAG)/(ROPE_N-1);
+    for(let k=0;k<ROPE_ITER;k++){
+      for(let i=0;i<ROPE_N-1;i++){const p=R[i],q=R[i+1];let dx=q.x-p.x,dy=q.y-p.y,d=Math.hypot(dx,dy)||1e-4;const diff=(d-seg)/d*0.5,ox=dx*diff,oy=dy*diff;if(i!==0){p.x+=ox;p.y+=oy;}if(i+1!==ROPE_N-1){q.x-=ox;q.y-=oy;}}
+      R[0].x=a1.x;R[0].y=a1.y;R[ROPE_N-1].x=a2.x;R[ROPE_N-1].y=a2.y;
+    }
+    const g=groups[arr.id];
+    if(g){let d='M'+R[0].x.toFixed(1)+','+R[0].y.toFixed(1);for(let i=1;i<ROPE_N;i++)d+=' L'+R[i].x.toFixed(1)+','+R[i].y.toFixed(1);g.children[0].setAttribute('d',d);g.children[1].setAttribute('d',d);}
+    // ラベル・キーバッジも糸の中点に毎フレーム追従
+    const m=R[Math.floor(ROPE_N/2)];
+    const lbl=elems.querySelector('.alabel[data-id="'+arr.id+'"]'); if(lbl){lbl.style.left=m.x+'px';lbl.style.top=m.y+'px';}
+    const kb=elems.querySelector('.akey-badge[data-keyarr="'+arr.id+'"]'); if(kb){kb.style.left=m.x+'px';kb.style.top=m.y+'px';}
+  });
+  updatePins();
+}
+function startRopePhysics(){ if(_ropeRAF)return; const loop=()=>{ if(!S.boardMode){_ropeRAF=null;return;} stepRopes(); _ropeRAF=requestAnimationFrame(loop); }; _ropeRAF=requestAnimationFrame(loop); }
+function stopRopePhysics(){ if(_ropeRAF){cancelAnimationFrame(_ropeRAF);_ropeRAF=null;} }
+// 押しピン（DOM・カード前面）を各カードのピン位置へ配置。ボードモード外なら全撤去。
+function updatePins(){
+  if(!elems)return;
+  const want=new Set();
+  if(S.boardMode){
+    S.cards.forEach(c=>{
+      want.add(c.id);
+      let pin=elems.querySelector('.pushpin[data-pin="'+c.id+'"]');
+      if(!pin){ pin=document.createElement('div'); pin.className='pushpin'; pin.dataset.pin=c.id; elems.appendChild(pin); }
+      const p=nodePin(c.id); pin.style.left=p.x+'px'; pin.style.top=p.y+'px';
+    });
+  }
+  elems.querySelectorAll('.pushpin').forEach(el=>{ if(!want.has(el.dataset.pin))el.remove(); });
+}
+function setBoardMode(on){
+  S.boardMode=!!on;
+  const btn=document.getElementById('btn-board-mode'); if(btn)btn.classList.toggle('active',S.boardMode);
+  if(!S.boardMode)_ropes.clear();
+  render();                                  // 矢印スタイル（糸/ベジェ）と背景・ピンを更新
+  if(S.boardMode)startRopePhysics(); else stopRopePhysics();
+}
+
+// ═══════════════════════════════════════
 //  RENDER
 // ═══════════════════════════════════════
 function render(){
@@ -1599,6 +1673,7 @@ function render(){
   updateTempArrow();
   updateHints();
   updateBgClass();
+  updatePins();          // 捜査ボードモードの押しピン（モード外では全撤去）
   applySelectionClasses();
   scheduleCommit();
 }
@@ -1606,12 +1681,14 @@ function render(){
 function renderAll(){ render(); renderSidebar(); }
 
 function updateBgClass(){
-  wrap.classList.remove('bg-grid','bg-dots','bg-plain');
-  wrap.classList.add('bg-'+S.bg);
+  wrap.classList.remove('bg-grid','bg-dots','bg-plain','bg-board');
+  if(S.boardMode){ wrap.classList.add('bg-board'); wrap.style.backgroundImage=CORK_URL; } // コルクボード（bg-grid等のクラスは外し、w2kスキンの!importantとの競合を回避）
+  else { wrap.classList.add('bg-'+S.bg); wrap.style.backgroundImage=''; }
   updateBgTransform();
 }
 // Grid/dots move & scale with the canvas so it feels like an infinite sheet
 function updateBgTransform(){
+  if(S.boardMode){ const sz=180*S.zoom; wrap.style.backgroundSize=sz+'px '+sz+'px'; wrap.style.backgroundPosition=S.panX+'px '+S.panY+'px'; return; }
   if(S.bg==='plain'){wrap.style.backgroundImage='';return;}
   const base=S.bg==='dots'?28:40;
   const sz=base*S.zoom;
@@ -1731,11 +1808,20 @@ function renderArrows(){
     } else existing.delete(arr.id);
 
     const hit=g.children[0];const vis=g.children[1];
-    hit.setAttribute('d',d);
-    vis.setAttribute('d',d);
-    vis.setAttribute('stroke',arr.color||'#ffffff');
+    if(S.boardMode){
+      // 捜査ボード：矢頭なしの"糸"。形は物理ループ(stepRopes)が毎フレーム更新する
+      vis.removeAttribute('marker-end');
+      if(!_ropes.has(arr.id)){hit.setAttribute('d',d);vis.setAttribute('d',d);} // 初期形状のみ
+      vis.setAttribute('stroke',(arr.color&&arr.color.toLowerCase()!=='#ffffff')?arr.color:'#c0392b'); // 既定の白は赤い糸に
+      vis.setAttribute('stroke-linecap','round');vis.setAttribute('stroke-linejoin','round');
+    } else {
+      hit.setAttribute('d',d);
+      vis.setAttribute('d',d);
+      vis.setAttribute('stroke',arr.color||'#ffffff');
+      vis.setAttribute('marker-end','url(#ah)');
+      vis.removeAttribute('stroke-linecap');vis.removeAttribute('stroke-linejoin');
+    }
     vis.setAttribute('stroke-width',arr.width||2);
-    vis.setAttribute('marker-end','url(#ah)');
     if(arr.dashed)vis.setAttribute('stroke-dasharray','8,5');
     else vis.removeAttribute('stroke-dasharray');
   });
@@ -1882,6 +1968,8 @@ function updateBranchEl(el,br){
 
 // Arrow midpoint (shared by labels & description anchors)
 function arrowMid(arr){
+  // 捜査ボードモード：揺れる糸の中点（ラベル・キー・解説線が糸に追従する）
+  if(S.boardMode){ const R=_ropes.get(arr.id); if(R&&R.length){ const m=R[Math.floor(R.length/2)]; return{x:m.x,y:m.y}; } }
   const p1=nodeCenter(arr.from),p2=nodeCenter(arr.to);
   if(!p1||!p2)return null;
   const key=[arr.from,arr.to].sort().join('|');
@@ -3199,6 +3287,7 @@ document.getElementById('bg-sel').onchange=function(){
   S.bg=this.value;render();
 };
 
+document.getElementById('btn-board-mode').onclick=()=>setBoardMode(!S.boardMode);
 document.getElementById('btn-del-all').onclick=()=>{
   if(!confirm('すべてを削除してまっさらな状態にしますか？\nタイトル・カード・レイヤー・疑問・手がかり・章をすべて消去します。この操作は元に戻せません。'))return;
   if(!confirm('本当にすべて削除します。よろしいですか？（最終確認）'))return;
@@ -3213,7 +3302,7 @@ function saveFile(){
   const data={
     title:'ClueBoard',
     version:2,
-    bg:S.bg,showDesc:S.showDesc,
+    bg:S.bg,showDesc:S.showDesc,boardMode:S.boardMode,
     docTitle:S.docTitle,
     currentBoard:S.currentBoard,
     layers:S.layers,
@@ -3251,6 +3340,7 @@ function applyDocData(d){
   _loadingDoc=true;
   S.bg=d.bg||'grid';
   S.showDesc=d.showDesc!==false;
+  S.boardMode=!!d.boardMode; _ropes.clear();
   S.clues=d.clues||[];
   S.cardOrder=d.cardOrder||[];
   S.chapters=(Array.isArray(d.chapters)&&d.chapters.length)?d.chapters.slice():['1章'];
@@ -3287,11 +3377,13 @@ function applyDocData(d){
   document.getElementById('bg-sel').value=S.bg;
   document.getElementById('btn-toggle-desc').classList.toggle('active',S.showDesc);
   render();applyTf();renderSidebar();resetHistory();
+  const bmBtn=document.getElementById('btn-board-mode'); if(bmBtn)bmBtn.classList.toggle('active',S.boardMode);
+  if(S.boardMode)startRopePhysics(); else stopRopePhysics();
   _loadingDoc=false;
 }
 function currentDocData(){
   saveActiveBoard();
-  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,currentBoard:S.currentBoard,layers:S.layers,
+  return {title:'ClueBoard',version:2,bg:S.bg,showDesc:S.showDesc,boardMode:S.boardMode,currentBoard:S.currentBoard,layers:S.layers,
     chapters:S.chapters,chapter:S.chapter,
     questions:S.questions,clues:S.clues,cardOrder:S.cardOrder,docTitle:S.docTitle,showMain:S.showMain,showCards:S.showCards,showLayers:S.showLayers,showQuestions:S.showQuestions,showClues:S.showClues,boards:S.boards};
 }
