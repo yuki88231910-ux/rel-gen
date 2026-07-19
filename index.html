@@ -101,6 +101,9 @@ body.filemenu-open #menu-backdrop{display:block}
 /* pointer-events:none so the card (not the img) receives the drag, and no native image drag-ghost */
 .card-img{width:100%;height:auto;max-height:280px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
 .card.shape-circle .card-img{width:100%;height:100%;border-radius:50%;margin:0}
+/* 証拠の強度メーター（カード下部・設定時のみ描画） */
+.strength-meter{display:flex;gap:2px;margin-top:5px;pointer-events:none;max-width:100%}
+.strength-meter i{width:9px;height:5px;border-radius:1px;display:block;box-shadow:0 0 0 1px rgba(0,0,0,.22) inset}
 /* カード名/サブ：明示改行(\n)を保ちつつ、カード幅を超える分は自動で折返し。収まらなければ…でクリップ（はみ出さない） */
 .card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);
   max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
@@ -1655,6 +1658,27 @@ function nodePin(id){
 }
 // ピン留めされた紙のわずかな傾き（idから決定論的に±2.2°）→ 手貼り感
 function boardTilt(id){let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return (((h%100)+100)%100)/100*4.4-2.2;}
+
+// ── 強度（証拠の確からしさ / 接続の確からしさ）0=未設定, 1..5 ──
+const STRENGTH_MAX=5;
+function strengthColor(v){ return v>=4?'#e53935':(v===3?'#fb8c00':'#c9a227'); } // 強=赤 / 中=橙 / 弱=黄
+function strengthLabel(v){ return v?((v>=4?'強':(v===3?'中':'弱'))+' ('+v+'/'+STRENGTH_MAX+')'):'未設定'; }
+// 編集モーダル用の5段階ピッカー（同じ段をもう一度押すと未設定に戻る）
+function buildStrengthPicker(boxId,getVal,setVal){
+  const box=document.getElementById(boxId); if(!box)return;
+  const draw=()=>{
+    box.innerHTML=''; const v=getVal()||0;
+    for(let i=1;i<=STRENGTH_MAX;i++){
+      const b=document.createElement('button'); b.type='button'; b.title=i+'/'+STRENGTH_MAX;
+      b.style.cssText='width:30px;height:20px;border-radius:3px;cursor:pointer;font-family:inherit;margin-right:4px;border:1px solid #6a6a9a;background:'+(i<=v?strengthColor(v):'transparent');
+      b.onclick=()=>{ setVal(v===i?0:i); draw(); };
+      box.appendChild(b);
+    }
+    const lab=document.createElement('span'); lab.style.cssText='font-size:11px;color:#9aa3b2;margin-left:6px'; lab.textContent=strengthLabel(v);
+    box.appendChild(lab);
+  };
+  draw();
+}
 const ROPE_N=20, ROPE_DAMP=0.98, ROPE_GRAV=0.6, ROPE_SAG=1.045, ROPE_ITER=14;
 function stepRopes(){
   if(!S.boardMode||!arrsG)return;
@@ -1860,11 +1884,14 @@ function renderArrows(){
 
     const hit=g.querySelector('.ahit');const vis=g.querySelector('.avis');
     let sh=g.querySelector('.ashadow');
+    // 接続の強度（0=未設定）→ 太さ・濃さ・点線に反映。強いほど太くはっきり、弱いほど細く薄く点線。
+    const st=arr.strength||0;
+    const sw=st>0?Math.max(1,(arr.width||2)*(0.6+st*0.2)):(arr.width||2);
     if(S.boardMode){
       // 糸がボードに落とす影（右下にオフセット）→ 浮いている立体感
       if(!sh){ sh=svgE('path',{class:'ashadow',fill:'none','pointer-events':'none',transform:'translate(3.5,7)'}); g.insertBefore(sh,hit); }
       sh.setAttribute('stroke','rgba(30,10,0,.30)');
-      sh.setAttribute('stroke-width',(arr.width||2)+1.5);
+      sh.setAttribute('stroke-width',sw+1.5);
       sh.setAttribute('stroke-linecap','round');sh.setAttribute('stroke-linejoin','round');
       // 捜査ボード：矢頭なしの"糸"。形は物理ループ(stepRopes)が毎フレーム更新する
       vis.removeAttribute('marker-end');
@@ -1879,9 +1906,10 @@ function renderArrows(){
       vis.setAttribute('marker-end','url(#ah)');
       vis.removeAttribute('stroke-linecap');vis.removeAttribute('stroke-linejoin');
     }
-    vis.setAttribute('stroke-width',arr.width||2);
-    if(arr.dashed)vis.setAttribute('stroke-dasharray','8,5');
-    else vis.removeAttribute('stroke-dasharray');
+    vis.setAttribute('stroke-width',sw);
+    vis.setAttribute('stroke-opacity',st>0?(0.42+st*0.116).toFixed(2):1);
+    const dash=arr.dashed?'8,5':(st>0&&st<=2?'7,6':null); // 弱い接続は点線＝まだ推測の関係
+    if(dash)vis.setAttribute('stroke-dasharray',dash); else vis.removeAttribute('stroke-dasharray');
   });
   existing.forEach(g=>g.remove());
 }
@@ -1975,6 +2003,15 @@ function updateCardEl(el,card){
   nm.style.fontSize=(13*(card.textScale||1)*2)+'px';
   const sb=el.querySelector('.card-sub');sb.textContent=card.sub||'';
   sb.style.fontSize=(11*(card.textScale||1)*2)+'px';
+  // 証拠の強度メーター（設定時のみ表示）
+  {
+    let sm=el.querySelector('.strength-meter'); const sv=card.strength||0;
+    if(sv>0){
+      if(!sm){sm=document.createElement('div');sm.className='strength-meter';el.appendChild(sm);}
+      sm.innerHTML=''; sm.title='証拠の強度 '+strengthLabel(sv);
+      for(let i=1;i<=STRENGTH_MAX;i++){const d=document.createElement('i');d.style.background=i<=sv?strengthColor(sv):'rgba(0,0,0,.2)';sm.appendChild(d);}
+    } else if(sm) sm.remove();
+  }
   setKeyBadge(el,card.key);
   // connect target highlight
   el.classList.toggle('conn-target',!!S.connecting&&S.connecting.fromId!==card.id);
@@ -2609,6 +2646,7 @@ function openCardEditor(id){
         ${card.image?'<button class="btn btn-s" id="ed-clrimg">🗑 削除</button><img src="'+card.image+'" style="height:40px;border-radius:4px">':''}
       </div>
     </div>
+    <div class="fg"><label>証拠の強度（確からしさ）</label><div id="ed-strength" style="display:flex;align-items:center;margin-top:4px"></div></div>
     <div class="fg"><label>幅 (px)</label><input type="number" id="ed-w" value="${card.w||150}" min="80" max="600" style="width:80px"></div>
     <div class="fg"><label>章タグ（所属する章＝表示される章。伏線は章に関係なく常時表示）</label><div id="ed-chapters" style="display:flex;flex-wrap:wrap;gap:6px;margin-top:4px"></div></div>
     <div class="fg"><label>解説（同じカードの全レイヤーで共有・Ctrl+Enterで改行）</label><textarea id="ed-desc">${esc(card.desc)}</textarea>${layerChipsHtml()}</div>
@@ -2620,6 +2658,7 @@ function openCardEditor(id){
     </div>
   `,()=>{
     buildIconGrid('ed-icon-grid',card.icon,v=>{document.getElementById('ed-cicon').value=v;card.icon=v;renderAll();scheduleCommit();});
+    buildStrengthPicker('ed-strength',()=>card.strength||0,v=>{card.strength=v;render();scheduleCommit();});
     wireLayerChips('ed-desc');
     const $=x=>document.getElementById(x);
     // 章タグのチップ（各章＋伏線）。トグルで card.chapters を編集し同名カードへ共有
@@ -2707,6 +2746,7 @@ function openArrowEditor(id){
       </div>
     </div>
     <div class="fg"><label style="display:flex;align-items:center;gap:8px"><input type="checkbox" id="ae-dashed" ${arr.dashed?'checked':''}> 点線</label></div>
+    <div class="fg"><label>接続の強度（関係の確からしさ）</label><div id="ae-strength" style="display:flex;align-items:center;margin-top:4px"></div></div>
     <div class="fg"><label>解説（Ctrl+Enterで改行）</label><textarea id="ae-desc">${esc(arr.desc)}</textarea></div>
     <div class="mact">
       <button class="btn btn-d" id="ae-del">🗑 削除</button>
@@ -2714,6 +2754,7 @@ function openArrowEditor(id){
     </div>
   `,()=>{
     const $=x=>document.getElementById(x);
+    buildStrengthPicker('ae-strength',()=>arr.strength||0,v=>{arr.strength=v;render();scheduleCommit();});
     // 入力は即時反映（自動保存）
     $('ae-name').addEventListener('input',()=>{ arr.name=$('ae-name').value; render(); scheduleCommit(); });
     $('ae-icon').addEventListener('input',()=>{ arr.icon=$('ae-icon').value; render(); scheduleCommit(); });
