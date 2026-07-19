@@ -276,6 +276,27 @@ body.filemenu-open #menu-backdrop{display:block}
 /* ピン留めされた紙：深い二重影＋わずかな傾き(JSでrotate付与)で立体感 */
 #canvas-wrap.bg-board .card{box-shadow:0 10px 18px rgba(30,12,2,.5),0 3px 6px rgba(30,12,2,.38)!important}
 #canvas-wrap.bg-board .card.selected{box-shadow:0 14px 24px rgba(30,12,2,.55),0 4px 8px rgba(30,12,2,.4),0 0 0 2px #ffd54f!important}
+/* ── 見た目テンプレ（属性から自動適用） ── */
+/* 人物 → 顔写真カード（捜査ファイル風：紙色・タイプライター文字・モノクロ写真） */
+#canvas-wrap.bg-board .card.attr-person{background:#f6f3ea!important;border:1px solid #b5ad98!important;border-radius:2px!important}
+#canvas-wrap.bg-board .card.attr-person .card-name{color:#1c1c1c!important;text-shadow:none!important;font-family:'Courier New',monospace!important;letter-spacing:.04em}
+#canvas-wrap.bg-board .card.attr-person .card-sub{color:#5a564a!important;font-family:'Courier New',monospace!important}
+#canvas-wrap.bg-board .card.attr-person .card-img{border-radius:0!important;border:1px solid #98917e;filter:grayscale(.85) contrast(1.06) sepia(.12)}
+#canvas-wrap.bg-board .card.attr-person .card-icon-wrap{background:#d9d4c4;border:1px solid #a29b88;padding:5px 15px;border-radius:1px}
+/* 手がかり・場所 → ポラロイド写真（白い厚縁・下広め・手書き文字） */
+#canvas-wrap.bg-board .card.attr-clue,#canvas-wrap.bg-board .card.attr-place{background:#fdfdfb!important;border:1px solid #d8d5cc!important;border-radius:2px!important;padding:12px 12px 7px!important}
+#canvas-wrap.bg-board .card.attr-clue .card-img,#canvas-wrap.bg-board .card.attr-place .card-img{border-radius:0!important;border:1px solid #e0ded6;margin-bottom:9px!important}
+#canvas-wrap.bg-board .card.attr-clue .card-name,#canvas-wrap.bg-board .card.attr-place .card-name{color:#2a2622!important;text-shadow:none!important;font-family:'UD デジタル 教科書体 N-R','Klee One','Segoe Print',cursive!important}
+#canvas-wrap.bg-board .card.attr-clue .card-sub,#canvas-wrap.bg-board .card.attr-place .card-sub{color:#6a655c!important;font-family:'UD デジタル 教科書体 N-R','Klee One','Segoe Print',cursive!important}
+#canvas-wrap.bg-board .card.attr-clue .card-icon-wrap,#canvas-wrap.bg-board .card.attr-place .card-icon-wrap{background:#efece2;border:1px solid #ddd8ca;padding:7px 17px;border-radius:1px}
+/* 解説 → 付箋（黄色い紙・手書き文字） */
+#canvas-wrap.bg-board .desc-box{background:linear-gradient(180deg,#fdef8d,#f6df67)!important;color:#4a3f14!important;border:0!important;border-radius:1px!important;
+  box-shadow:0 7px 11px rgba(30,12,2,.35),0 1px 3px rgba(30,12,2,.25)!important;
+  font-family:'UD デジタル 教科書体 N-R','Klee One','Segoe Print',cursive!important;transform:rotate(-.8deg)}
+/* サブタイトル → 新聞記事（生成り紙・明朝見出し・二重罫線） */
+#canvas-wrap.bg-board .subtitle{background:#f2eee2!important;color:#171410!important;border:1px solid #2b2620!important;border-radius:0!important;text-shadow:none!important;
+  font-family:Georgia,'Times New Roman','Yu Mincho','MS PMincho',serif!important;
+  box-shadow:inset 0 0 0 3px #f2eee2,inset 0 0 0 4px #2b2620,0 9px 15px rgba(30,12,2,.42)!important}
 
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
 #boot-screen{position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -1907,7 +1928,7 @@ function updateCardEl(el,card){
   const _sc=(card.scale&&card.scale!==1)?`scale(${card.scale})`:'';
   const _rt=S.boardMode?('rotate('+boardTilt(card.id).toFixed(2)+'deg) '):''; // 捜査ボード：紙の傾き
   el.style.transform=(_rt+_sc).trim();
-  el.className='card shape-'+card.shape;el.dataset.id=card.id;
+  el.className='card shape-'+card.shape+' attr-'+attrOf(card);el.dataset.id=card.id; // 属性クラス（捜査ボードの見た目テンプレが参照）
   el.style.background=card.color||'#9b59b6';
   el.style.boxShadow=`0 6px 24px ${hexAlpha(card.color||'#9b59b6',.5)}`;
   // bubble tail color
