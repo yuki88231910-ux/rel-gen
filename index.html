@@ -101,8 +101,13 @@ body.filemenu-open #menu-backdrop{display:block}
 /* pointer-events:none so the card (not the img) receives the drag, and no native image drag-ghost */
 .card-img{width:100%;height:auto;max-height:280px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
 .card.shape-circle .card-img{width:100%;height:100%;border-radius:50%;margin:0}
-.card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);white-space:pre} /* 改行は明示(\n)のみ */
-.card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;white-space:pre}
+/* カード名/サブ：明示改行(\n)を保ちつつ、カード幅を超える分は自動で折返し。収まらなければ…でクリップ（はみ出さない） */
+.card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);
+  max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;overflow:hidden}
+.card-sub{font-size:11px;color:rgba(255,255,255,.7);text-align:center;margin-top:2px;
+  max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
+  display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;overflow:hidden}
 /* unified draggable description box — always horizontal, linked by a dotted line */
 .desc-box{position:absolute;background:rgba(10,10,30,.94);color:#cfcfe6;font-size:11px;line-height:1.55;padding:7px 11px;border-radius:8px;width:max-content;min-width:80px;white-space:pre;writing-mode:horizontal-tb;text-orientation:mixed;z-index:45;border:1px dashed rgba(160,150,255,.5);cursor:move;text-align:left;box-shadow:0 4px 16px rgba(0,0,0,.45)} /* 改行は明示(\n=Ctrl+Enter)のみ。自動折返しせず横に伸びる */
 .desc-box.hovonly{display:none} /* 解説OFF時はホバーでだけ表示 */
@@ -618,7 +623,7 @@ const ATTRS={
   person:  {label:'人物',     color:'#4dabf7', icon:'👤', defName:'新しい人物'},
   clue:    {label:'手がかり', color:'#ffa94d', icon:'🔍', defName:'新しい手がかり'},
   place:   {label:'場所',     color:'#51cf66', icon:'📍', defName:'新しい場所'},
-  question:{label:'疑問・伏線',color:'#cc5de8', icon:'❓'}
+  question:{label:'疑問・伏線',color:'#cc5de8', icon:'❓', defName:'新しい疑問'}
 };
 function attrOf(c){return (c&&c.attr)|| (c&&c.linkBoard?'question': (c&&c.fromClue?'clue':'person'));}
 const FUKUSEN='伏線'; // 特別な章タグ：付いたカードは章に関係なくサイドバー最下部の伏線欄に常時表示
@@ -1955,12 +1960,15 @@ function updateCardEl(el,card){
     // only (re)assign src when it actually changes — avoids reloading/flicker on rapid re-renders (e.g. size slider)
     if(img._src!==card.image){img._src=card.image;img.src=card.image;}
   } else {
-    img.style.display='none';iw.style.display='block';
+    img.style.display='none';
     if(img._src){img._src=null;img.removeAttribute('src');}
+    const at=attrOf(card);
     let icoTxt=card.icon||'✦';
-    if(S.boardMode){const at=attrOf(card); if(at==='person')icoTxt=''; else if(at==='clue'||at==='place')icoTxt='？';} // ボード：人物=人影(CSS背景)・手がかり/場所=？
-    iw.textContent=icoTxt;
-    iw.style.fontSize=(22*(card.textScale||1)*2)+'px'; // カード文字はデフォルト2倍（PC/モバイル共通）
+    if(S.boardMode){ if(at==='person')icoTxt=''; else if((at==='clue'||at==='place')&&!card.icon)icoTxt='？'; } // ボード：人物=人影(CSS背景)・手がかり/場所=？
+    // 疑問・伏線は基本テキストのみ。画像もアイコンも無ければアイコン枠自体を出さない（手動でアイコン設定した時だけ表示）
+    const hideIcon=(at==='question'&&!card.icon);
+    iw.style.display=hideIcon?'none':'block';
+    if(!hideIcon){ iw.textContent=icoTxt; iw.style.fontSize=(22*(card.textScale||1)*2)+'px'; } // カード文字はデフォルト2倍（PC/モバイル共通）
   }
   el.classList.toggle('link-node',!!card.linkBoard); // 疑問へのリンクノードなら破線＋↗バッジ
   const nm=el.querySelector('.card-name');nm.textContent=card.name||'';
@@ -2476,7 +2484,7 @@ function addCard(){
     <div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
     document.querySelectorAll('.attr-pick').forEach(b=>b.onclick=()=>{
       const at=b.dataset.attr; hideModal();
-      if(at==='question')addQuestion(); else createCardWithAttr(at);
+      createCardWithAttr(at); // 疑問・伏線も現在のレイヤーにカードとして配置
     });
   });
 }
@@ -2484,8 +2492,9 @@ function createCardWithAttr(attr){
   const c=s2c(wrap.clientWidth/2,wrap.clientHeight/2);
   const a=ATTRS[attr]||ATTRS.person;
   const card={id:uid(),x:c.x-75,y:c.y-45,w:150,name:a.defName||'新しいカード',sub:'',
-    color:a.color,image:null,icon:a.icon,shape:'rect',desc:'',textScale:1,zoneIds:[],attr,chapters:[]};
+    color:a.color,image:null,icon:(attr==='question'?'':a.icon),shape:'rect',desc:'',textScale:1,zoneIds:[],attr,chapters:[]};
   if(attr==='clue')card.key=true; // 手がかりは自動で🔑
+  // 疑問・伏線は画像もアイコンも既定で持たない＝テキストのみ表示（後から手動設定は可）
   tagChapter(card);               // 現在の章タグを自動付与
   S.cards.push(card);
   autoLayerTag(card);
