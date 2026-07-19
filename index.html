@@ -261,11 +261,21 @@ body.filemenu-open #menu-backdrop{display:block}
 
 /* ══ 捜査ボードモード（コルク＋押しピン＋赤い糸） ══ */
 #canvas-wrap.bg-board{background-color:#b8874e}
-.pushpin{position:absolute;width:15px;height:15px;border-radius:50%;transform:translate(-50%,-55%);z-index:30;pointer-events:none;
-  background:radial-gradient(circle at 35% 30%,#ff8a80,#e53935 55%,#8e1410);
-  box-shadow:0 2px 3px rgba(0,0,0,.45),inset 0 -2px 3px rgba(0,0,0,.25)}
-.pushpin::after{content:'';position:absolute;left:50%;top:92%;width:2px;height:5px;background:linear-gradient(#888,#333);transform:translateX(-50%)}
-#canvas-wrap.bg-board .card{box-shadow:0 5px 9px rgba(0,0,0,.38)!important}  /* 紙が浮いた影 */
+/* 部屋の照明：中央上にスポット光、周辺は暗く落ちるビネット（3D感の要） */
+#canvas-wrap.bg-board::before{content:'';position:absolute;inset:0;pointer-events:none;z-index:5;
+  background:radial-gradient(ellipse 120% 90% at 50% 30%,rgba(255,238,190,.14) 0%,rgba(255,238,190,0) 40%,rgba(30,12,2,.22) 78%,rgba(24,9,1,.5) 100%)}
+/* ボードの縁の落ち影（額縁の内側にいるような奥行き） */
+#canvas-wrap.bg-board::after{content:'';position:absolute;inset:0;pointer-events:none;z-index:6;
+  box-shadow:inset 0 0 110px rgba(40,16,3,.5),inset 0 0 22px rgba(40,16,3,.4)}
+.pushpin{position:absolute;width:18px;height:18px;border-radius:50%;transform:translate(-50%,-58%);z-index:30;pointer-events:none;
+  background:radial-gradient(circle at 33% 28%,#ffb3ab 0%,#f4433a 40%,#c62828 62%,#7d1310 100%);
+  box-shadow:0 3px 4px rgba(30,10,0,.5),inset -2px -3px 4px rgba(80,0,0,.55),inset 2px 2px 3px rgba(255,190,180,.65)}
+.pushpin::before{content:'';position:absolute;left:50%;top:86%;width:16px;height:6px;border-radius:50%;z-index:-1;
+  background:radial-gradient(ellipse,rgba(25,8,0,.45),rgba(25,8,0,0) 70%);transform:translate(-38%,0)}
+.pushpin::after{content:'';position:absolute;left:50%;top:94%;width:2px;height:5px;background:linear-gradient(#9a9a9a,#3a3a3a);transform:translateX(-50%)}
+/* ピン留めされた紙：深い二重影＋わずかな傾き(JSでrotate付与)で立体感 */
+#canvas-wrap.bg-board .card{box-shadow:0 10px 18px rgba(30,12,2,.5),0 3px 6px rgba(30,12,2,.38)!important}
+#canvas-wrap.bg-board .card.selected{box-shadow:0 14px 24px rgba(30,12,2,.55),0 4px 8px rgba(30,12,2,.4),0 0 0 2px #ffd54f!important}
 
 /* ══ GAMECUBE-STYLE BOOT SCREEN ══ */
 #boot-screen{position:fixed;inset:0;z-index:99999;overflow:hidden;display:flex;flex-direction:column;align-items:center;justify-content:center;
@@ -1597,7 +1607,18 @@ function getCP(x1,y1,x2,y2,curve){
 // ═══════════════════════════════════════
 //  捜査ボードモード（コルク背景＋押しピン＋Verletロープ物理の"糸"）
 // ═══════════════════════════════════════
-const CORK_URL=(()=>{ const svg="<svg xmlns='http://www.w3.org/2000/svg' width='180' height='180'><filter id='c'><feTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='2' seed='4'/><feColorMatrix values='0 0 0 0 0.74  0 0 0 0 0.55  0 0 0 0 0.32  0 0 0 0.42 0'/></filter><rect width='180' height='180' fill='#c99a5f'/><rect width='180' height='180' filter='url(#c)'/></svg>"; return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")'; })();
+const CORK_TILE=360; // コルクのタイルサイズ(px, zoom=1)
+const CORK_URL=(()=>{ const svg="<svg xmlns='http://www.w3.org/2000/svg' width='360' height='360'>"+
+  "<defs>"+
+  "<filter id='a' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='0.02' numOctaves='3' seed='7' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.40  0 0 0 0 0.25  0 0 0 0 0.11  0 0 0 0.55 0'/></filter>"+
+  "<filter id='b' x='0' y='0' width='100%' height='100%'><feTurbulence type='fractalNoise' baseFrequency='0.28' numOctaves='2' seed='3' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 0.24  0 0 0 0 0.14  0 0 0 0 0.06  0 0 0 0.34 0'/></filter>"+
+  "<filter id='c' x='0' y='0' width='100%' height='100%'><feTurbulence type='turbulence' baseFrequency='0.8' numOctaves='2' seed='11' stitchTiles='stitch'/><feColorMatrix values='0 0 0 0 1  0 0 0 0 0.93  0 0 0 0 0.74  0 0 0 0.16 0'/></filter>"+
+  "</defs>"+
+  "<rect width='360' height='360' fill='#c59a63'/>"+
+  "<rect width='360' height='360' filter='url(#a)'/>"+
+  "<rect width='360' height='360' filter='url(#b)'/>"+
+  "<rect width='360' height='360' filter='url(#c)'/>"+
+  "</svg>"; return 'url("data:image/svg+xml,'+encodeURIComponent(svg)+'")'; })();
 const _ropes=new Map();          // arrowId → [{x,y,ox,oy}...]  （揺れる糸の点。永続化しない）
 let _ropeRAF=null;
 // カード/分岐の"ピン位置"＝上端中央（糸はここに結ばれ、押しピンもここに描く）
@@ -1606,6 +1627,8 @@ function nodePin(id){
   const b=branchById(id); if(b)return{x:b.x+20,y:b.y};
   return null;
 }
+// ピン留めされた紙のわずかな傾き（idから決定論的に±2.2°）→ 手貼り感
+function boardTilt(id){let h=0;for(let i=0;i<id.length;i++)h=(h*31+id.charCodeAt(i))|0;return (((h%100)+100)%100)/100*4.4-2.2;}
 const ROPE_N=20, ROPE_DAMP=0.98, ROPE_GRAV=0.6, ROPE_SAG=1.045, ROPE_ITER=14;
 function stepRopes(){
   if(!S.boardMode||!arrsG)return;
@@ -1626,7 +1649,9 @@ function stepRopes(){
       R[0].x=a1.x;R[0].y=a1.y;R[ROPE_N-1].x=a2.x;R[ROPE_N-1].y=a2.y;
     }
     const g=groups[arr.id];
-    if(g){let d='M'+R[0].x.toFixed(1)+','+R[0].y.toFixed(1);for(let i=1;i<ROPE_N;i++)d+=' L'+R[i].x.toFixed(1)+','+R[i].y.toFixed(1);g.children[0].setAttribute('d',d);g.children[1].setAttribute('d',d);}
+    if(g){let d='M'+R[0].x.toFixed(1)+','+R[0].y.toFixed(1);for(let i=1;i<ROPE_N;i++)d+=' L'+R[i].x.toFixed(1)+','+R[i].y.toFixed(1);
+      const hit=g.querySelector('.ahit'),vis=g.querySelector('.avis'),sh=g.querySelector('.ashadow');
+      if(hit)hit.setAttribute('d',d); if(vis)vis.setAttribute('d',d); if(sh)sh.setAttribute('d',d);}
     // ラベル・キーバッジも糸の中点に毎フレーム追従
     const m=R[Math.floor(ROPE_N/2)];
     const lbl=elems.querySelector('.alabel[data-id="'+arr.id+'"]'); if(lbl){lbl.style.left=m.x+'px';lbl.style.top=m.y+'px';}
@@ -1641,7 +1666,7 @@ function updatePins(){
   if(!elems)return;
   const want=new Set();
   if(S.boardMode){
-    S.cards.forEach(c=>{
+    S.cards.concat(S.branches||[]).forEach(c=>{
       want.add(c.id);
       let pin=elems.querySelector('.pushpin[data-pin="'+c.id+'"]');
       if(!pin){ pin=document.createElement('div'); pin.className='pushpin'; pin.dataset.pin=c.id; elems.appendChild(pin); }
@@ -1688,7 +1713,7 @@ function updateBgClass(){
 }
 // Grid/dots move & scale with the canvas so it feels like an infinite sheet
 function updateBgTransform(){
-  if(S.boardMode){ const sz=180*S.zoom; wrap.style.backgroundSize=sz+'px '+sz+'px'; wrap.style.backgroundPosition=S.panX+'px '+S.panY+'px'; return; }
+  if(S.boardMode){ const sz=CORK_TILE*S.zoom; wrap.style.backgroundSize=sz+'px '+sz+'px'; wrap.style.backgroundPosition=S.panX+'px '+S.panY+'px'; return; }
   if(S.bg==='plain'){wrap.style.backgroundImage='';return;}
   const base=S.bg==='dots'?28:40;
   const sz=base*S.zoom;
@@ -1807,14 +1832,21 @@ function renderArrows(){
       hit.addEventListener('contextmenu',e=>{e.preventDefault();e.stopPropagation();onArrowCtx(e,arr.id)});
     } else existing.delete(arr.id);
 
-    const hit=g.children[0];const vis=g.children[1];
+    const hit=g.querySelector('.ahit');const vis=g.querySelector('.avis');
+    let sh=g.querySelector('.ashadow');
     if(S.boardMode){
+      // 糸がボードに落とす影（右下にオフセット）→ 浮いている立体感
+      if(!sh){ sh=svgE('path',{class:'ashadow',fill:'none','pointer-events':'none',transform:'translate(3.5,7)'}); g.insertBefore(sh,hit); }
+      sh.setAttribute('stroke','rgba(30,10,0,.30)');
+      sh.setAttribute('stroke-width',(arr.width||2)+1.5);
+      sh.setAttribute('stroke-linecap','round');sh.setAttribute('stroke-linejoin','round');
       // 捜査ボード：矢頭なしの"糸"。形は物理ループ(stepRopes)が毎フレーム更新する
       vis.removeAttribute('marker-end');
-      if(!_ropes.has(arr.id)){hit.setAttribute('d',d);vis.setAttribute('d',d);} // 初期形状のみ
+      if(!_ropes.has(arr.id)){hit.setAttribute('d',d);vis.setAttribute('d',d);sh.setAttribute('d',d);} // 初期形状のみ
       vis.setAttribute('stroke',(arr.color&&arr.color.toLowerCase()!=='#ffffff')?arr.color:'#c0392b'); // 既定の白は赤い糸に
       vis.setAttribute('stroke-linecap','round');vis.setAttribute('stroke-linejoin','round');
     } else {
+      if(sh)sh.remove();
       hit.setAttribute('d',d);
       vis.setAttribute('d',d);
       vis.setAttribute('stroke',arr.color||'#ffffff');
@@ -1881,7 +1913,9 @@ function updateCardEl(el,card){
   else el.style.height='';
   // overall size = whole-card scale (keeps top-left anchored at x,y)
   el.style.transformOrigin='top left';
-  el.style.transform=(card.scale&&card.scale!==1)?`scale(${card.scale})`:'';
+  const _sc=(card.scale&&card.scale!==1)?`scale(${card.scale})`:'';
+  const _rt=S.boardMode?('rotate('+boardTilt(card.id).toFixed(2)+'deg) '):''; // 捜査ボード：紙の傾き
+  el.style.transform=(_rt+_sc).trim();
   el.className='card shape-'+card.shape;el.dataset.id=card.id;
   el.style.background=card.color||'#9b59b6';
   el.style.boxShadow=`0 6px 24px ${hexAlpha(card.color||'#9b59b6',.5)}`;
