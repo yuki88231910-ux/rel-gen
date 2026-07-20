@@ -106,8 +106,9 @@ body.filemenu-open #menu-backdrop{display:block}
 .infer-mark{background:linear-gradient(transparent 52%,rgba(77,171,247,.55) 52%);border-radius:2px;padding:0 1px;font-weight:bold}
 .fact-fix{text-decoration:line-through;text-decoration-color:#e53935;text-decoration-thickness:2px;opacity:.72}
 /* 証拠の強度メーター（カード下部・設定時のみ描画） */
-.strength-meter{display:flex;gap:2px;margin-top:5px;pointer-events:none;max-width:100%}
-.strength-meter i{width:9px;height:5px;border-radius:1px;display:block;box-shadow:0 0 0 1px rgba(0,0,0,.22) inset}
+/* 証拠の強度メーター：カード幅いっぱい（各セグメントが均等に伸びる） */
+.strength-meter{display:flex;gap:3px;margin-top:6px;pointer-events:none;width:100%;align-self:stretch}
+.strength-meter i{flex:1 1 0;min-width:0;height:6px;border-radius:2px;display:block;box-shadow:0 0 0 1px rgba(0,0,0,.22) inset}
 /* カード名/サブ：明示改行(\n)を保ちつつ、カード幅を超える分は自動で折返し。収まらなければ…でクリップ（はみ出さない） */
 .card-name{font-weight:bold;font-size:13px;text-align:center;color:#fff;text-shadow:0 1px 4px rgba(0,0,0,.6);
   max-width:100%;white-space:pre-wrap;overflow-wrap:anywhere;word-break:break-word;
@@ -2264,7 +2265,7 @@ function markDescSelection(ta,kind){
   if(s===e)return false;                                   // 範囲未選択なら何もしない
   const sel=v.slice(s,e);
   const wrapped = kind==='infer' ? '{{'+sel+'}}' : '~~'+sel+'~~';
-  const tail    = kind==='infer' ? '根拠　→　'  : '　→　';
+  const tail    = kind==='infer' ? '\n根拠　→　' : '　→　'; // 根拠は改行して独立した行に
   let nv=v.slice(0,s)+wrapped+v.slice(e);
   const after=s+wrapped.length;
   const mm=nv.slice(after).match(/[。．.!！?？]|\n/);       // その文の終わりを探す
@@ -2272,9 +2273,11 @@ function markDescSelection(ta,kind){
   if(!mm)             at=nv.length;                        // 文末が無ければ末尾
   else if(mm[0]==='\n')at=after+mm.index;                  // 改行の直前
   else                at=after+mm.index+mm[0].length;      // 句点の直後
-  nv=nv.slice(0,at)+tail+nv.slice(at);
+  let ins=tail;
+  if(kind==='infer'&&at<nv.length&&nv[at]!=='\n')ins=tail+'\n'; // 続きの文は次の行へ送り、根拠行を独立させる
+  nv=nv.slice(0,at)+ins+nv.slice(at);
   ta.value=nv;
-  const caret=at+tail.length;                              // 根拠/訂正内容をすぐ書ける位置へ
+  const caret=at+tail.length;                              // 「根拠　→　」の直後（続きの改行より前）
   ta.focus(); ta.selectionStart=ta.selectionEnd=caret;
   return true;
 }
