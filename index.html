@@ -101,6 +101,7 @@ body.filemenu-open #menu-backdrop{display:block}
 /* pointer-events:none so the card (not the img) receives the drag, and no native image drag-ghost */
 .card-img{width:100%;height:auto;max-height:280px;object-fit:cover;border-radius:8px;margin-bottom:5px;display:block;pointer-events:none;-webkit-user-drag:none;user-select:none}
 .card.shape-circle .card-img{width:100%;height:100%;border-radius:50%;margin:0}
+.sr-row:hover{background:rgba(255,255,255,.09)}
 /* 解説内: 推論=青マーカー / 事実訂正=赤の取り消し線（明/暗どちらの背景でも読める） */
 .infer-mark{background:linear-gradient(transparent 52%,rgba(77,171,247,.55) 52%);border-radius:2px;padding:0 1px;font-weight:bold}
 .fact-fix{text-decoration:line-through;text-decoration-color:#e53935;text-decoration-thickness:2px;opacity:.72}
@@ -533,6 +534,7 @@ input[type=checkbox],input[type=range]{accent-color:var(--w2k-sel)!important}
   <button class="mbtn" id="btn-text">T テキスト ▾</button>
   <button class="mbtn" id="btn-align" title="複数選択(Ctrl+クリック)した要素を整列" disabled>⬓ 配置 ▾</button>
   <div class="menu-sep"></div>
+  <button class="mbtn" id="btn-search" title="ファイル内のテキストを検索（Ctrl+F）">🔍 検索</button>
   <button class="mbtn" id="btn-toggle-desc">解説 ON/OFF</button>
   <button class="mbtn save-grp danger" id="btn-del-all">🗑 すべて削除</button>
   <button class="mbtn" id="btn-filemenu" style="margin-left:auto" title="保存・読み込み・共有・ログイン">☰ メニュー</button>
@@ -946,6 +948,82 @@ function makeKeyItem(k){
   if(k.boards.length>1){const c=document.createElement('span');c.style.cssText='margin-left:auto;font-size:11px;font-weight:bold;color:#f5c518;opacity:.9;flex:0 0 auto';c.textContent='×'+k.boards.length;c.title=k.boards.length+'箇所（レイヤー/疑問）にあります';it.appendChild(c);}
   it.onclick=()=>{ k.boards.length>1 ? chooseKeyBoard(k.name,k.boards) : jumpToKey(k.name,k.boards[0]); };
   return it;
+}
+
+// ═══════════════════════════════════════
+//  検索（ファイル内の全テキストを横断）
+// ═══════════════════════════════════════
+function focusPoint(x,y){ const r=wrap.getBoundingClientRect(); S.panX=r.width/2-x*S.zoom; S.panY=r.height/2-y*S.zoom; applyTf(); render(); }
+// 全レイヤー＋全疑問の図から、テキストを持つ要素を集める。カードは名前でユニーク化し、存在する図を boards に集約。
+function buildSearchIndex(){
+  saveActiveBoard();
+  const hits=[], uniqCards=new Map();
+  S.layers.map(l=>l.id).concat(S.questions.map(q=>q.id)).forEach(bid=>{
+    const bd=S.boards[bid]; if(!bd)return;
+    (bd.cards||[]).forEach(c=>{
+      const nm=(c.name||'').trim(), key=nm||(' '+c.id);
+      if(!uniqCards.has(key))uniqCards.set(key,{kind:'card',id:c.id,name:nm||'(無題カード)',text:'',boards:[]});
+      const e=uniqCards.get(key);
+      if(!e.boards.includes(bid))e.boards.push(bid);
+      if(!e.text)e.text=[c.sub,c.desc].filter(x=>x&&x.trim()).join(' / ');
+    });
+    (bd.arrows||[]).forEach(a=>{ if((a.name||'').trim()||(a.desc||'').trim())hits.push({kind:'arrow',id:a.id,boards:[bid],name:(a.name||'').trim()||'(無題の関係)',text:a.desc||''}); });
+    (bd.branches||[]).forEach(b=>{ if((b.name||'').trim()||(b.desc||'').trim())hits.push({kind:'branch',id:b.id,boards:[bid],name:(b.name||'分岐'),text:b.desc||''}); });
+    (bd.subtitles||[]).forEach(s=>{ if((s.text||'').trim())hits.push({kind:'subtitle',id:s.id,boards:[bid],name:s.text,text:''}); });
+    (bd.images||[]).forEach(im=>{ if((im.desc||'').trim())hits.push({kind:'image',id:im.id,boards:[bid],name:'画像の解説',text:im.desc}); });
+  });
+  uniqCards.forEach(e=>hits.push(e));
+  S.clues.forEach(c=>hits.push({kind:'clue',id:c.id,boards:[],name:(c.name||'手がかり'),text:[c.sub,c.desc].filter(x=>x&&x.trim()).join(' / ')}));
+  S.questions.forEach(q=>hits.push({kind:'question',id:q.id,boards:[q.id],name:(q.title||'疑問'),text:''}));
+  return hits;
+}
+function gotoHit(h,bid){
+  if(bid&&S.currentBoard!==bid)switchBoard(bid);
+  if(h.kind==='card'){ const c=S.cards.find(x=>(x.name||'').trim()===h.name.trim())||cardById(h.id); if(c){focusCard(c.id);return;} }
+  let p=null;
+  if(h.kind==='arrow'){ const a=arrById(h.id); if(a)p=arrowMid(a); }
+  else if(h.kind==='branch'){ const b=branchById(h.id); if(b)p={x:b.x+20,y:b.y+20}; }
+  else if(h.kind==='subtitle'){ const s=S.subtitles.find(x=>x.id===h.id); if(s)p={x:s.x,y:s.y}; }
+  else if(h.kind==='image'){ const im=S.images.find(x=>x.id===h.id); if(im)p={x:im.x+im.w/2,y:im.y+im.h/2}; }
+  if(p)focusPoint(p.x,p.y);
+}
+// 複数の図に同じカードがある時は飛び先を選べる（🔑ジャンプと同じ挙動）
+function chooseHitBoard(h){
+  const opts=h.boards.map(id=>`<button type="button" class="btn btn-s hit-board-opt" data-id="${esc(id)}" style="display:block;width:100%;text-align:left;margin:5px 0">${boardIconOf(id)} ${esc(boardLabelOf(id))}</button>`).join('');
+  showModal(`<h2>${esc(h.name)}</h2><div class="fg" style="color:#cfcfe6;font-size:13px">どこへ移動しますか？</div><div class="fg">${opts}</div><div class="mact"><button class="btn btn-s" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelectorAll('.hit-board-opt').forEach(b=>b.onclick=()=>{const id=b.dataset.id;hideModal();gotoHit(h,id);});
+  });
+}
+function jumpToHit(h){
+  if(h.kind==='clue'){ openClueEditor(h.id); return; }   // 手がかりは図に無いので編集を開く
+  if(h.boards.length>1){ chooseHitBoard(h); return; }
+  gotoHit(h,h.boards[0]);
+}
+const SEARCH_KIND={card:'🗂 カード',arrow:'↗ 関係',branch:'⑂ 分岐',subtitle:'T サブタイトル',image:'🖼 画像',clue:'🔍 手がかり',question:'❓ 疑問'};
+function openSearch(){
+  showModal(`<h2>🔍 検索</h2>
+    <div class="fg"><input type="text" id="sr-q" placeholder="カード名・解説・関係・サブタイトル…" autocomplete="off"></div>
+    <div id="sr-list" style="max-height:46vh;overflow-y:auto;margin-top:2px"></div>
+    <div class="mact"><button class="btn btn-p" onclick="hideModal()">閉じる</button></div>`,()=>{
+    const inp=document.getElementById('sr-q'), list=document.getElementById('sr-list');
+    const idx=buildSearchIndex();
+    const draw=()=>{
+      const q=(inp.value||'').trim().toLowerCase();
+      list.innerHTML='';
+      const rows=idx.filter(h=>!q||((h.name+' '+h.text).toLowerCase().includes(q)));
+      if(!rows.length){ list.innerHTML='<div style="padding:10px;color:#9aa3b2;font-size:12px">見つかりませんでした</div>'; return; }
+      rows.slice(0,300).forEach(h=>{
+        const d=document.createElement('div'); d.className='sr-row';
+        d.style.cssText='padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.09);cursor:pointer';
+        const where=h.boards.length?(h.boards.length>1?('×'+h.boards.length+'箇所'):boardLabelOf(h.boards[0])):'手がかり一覧';
+        d.innerHTML=`<div style="font-size:12.5px;display:flex;gap:6px;align-items:baseline"><b style="flex:1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">${esc(h.name)}</b><span style="opacity:.62;font-size:11px;flex:0 0 auto">${esc(SEARCH_KIND[h.kind]||'')}</span><span style="opacity:.62;font-size:11px;flex:0 0 auto">${esc(where)}</span></div>`+
+          (h.text?`<div style="font-size:11px;opacity:.72;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc(h.text.replace(/\s+/g,' ').slice(0,90))}</div>`:'');
+        d.onclick=()=>{ hideModal(); jumpToHit(h); };
+        list.appendChild(d);
+      });
+    };
+    inp.addEventListener('input',draw); inp.focus(); draw();
+  });
 }
 
 // ═══════════════════════════════════════
@@ -3386,6 +3464,7 @@ document.addEventListener('keydown',e=>{
   else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();redo();} // Ctrl+Y or Ctrl+Shift+Z
   else if(k==='b'){e.preventDefault();addCard();}                      // new card
   else if(k==='s'){e.preventDefault();saveFile();}                     // save
+  else if(k==='f'){e.preventDefault();openSearch();}                   // ファイル内のテキスト検索
 });
 
 // Paste image
@@ -3443,6 +3522,7 @@ document.getElementById('bg-sel').onchange=function(){
   S.bg=this.value;render();
 };
 
+document.getElementById('btn-search').onclick=openSearch;
 document.getElementById('btn-board-mode').onclick=()=>setBoardMode(!S.boardMode);
 document.getElementById('btn-del-all').onclick=()=>{
   if(!confirm('すべてを削除してまっさらな状態にしますか？\nタイトル・カード・レイヤー・疑問・手がかり・章をすべて消去します。この操作は元に戻せません。'))return;
