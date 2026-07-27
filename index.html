@@ -515,6 +515,7 @@ input[type=checkbox],input[type=range]{accent-color:var(--w2k-sel)!important}
 </div>
 
 <div id="menubar">
+  <button class="mbtn" id="btn-file" title="ファイル（開く / 上書き保存 / 名前を付けて保存）">📁 ファイル ▾</button>
   <span id="app-title">🔍 ClueBoard</span>
   <input id="doc-title" placeholder="タイトルを入力" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
   <div class="menu-sep"></div>
@@ -3466,7 +3467,7 @@ document.addEventListener('keydown',e=>{
   if(k==='z'&&!e.shiftKey){e.preventDefault();undo();}
   else if(k==='y'||(k==='z'&&e.shiftKey)){e.preventDefault();redo();} // Ctrl+Y or Ctrl+Shift+Z
   else if(k==='b'){e.preventDefault();addCard();}                      // new card
-  else if(k==='s'){e.preventDefault();saveFile();}                     // save
+  else if(k==='s'){e.preventDefault();fileSaveNow();}                  // 上書き保存（未対応環境はダウンロード）
   else if(k==='f'){e.preventDefault();openSearch();}                   // ファイル内のテキスト検索
 });
 
@@ -3566,6 +3567,129 @@ function saveFile(){
   a.click();URL.revokeObjectURL(a.href);
 }
 document.getElementById('btn-save').onclick=saveFile;
+
+// ═══════════════════════════════════════
+//  ファイル操作（作業フォルダ内のファイルを直接 開く / 上書き保存 / 名前を付けて保存）
+//  File System Access API（Chrome/Edge）。未対応ブラウザはダウンロード＋ファイル選択にフォールバック。
+// ═══════════════════════════════════════
+let _fsDir=null;    // 作業フォルダ（既定: D:\くろーどこーど\関係性ジェネレーター\作成データ）
+let _fsFile=null;   // 現在開いているファイル
+const FS_SUPPORTED=('showOpenFilePicker' in window)&&('showDirectoryPicker' in window);
+// フォルダ/ファイルの参照はIndexedDBにしか入れられない（JSON化できない）ので専用の極小ストアを持つ
+function _idb(){ return new Promise((res,rej)=>{ const r=indexedDB.open('clueboard_fs',1);
+  r.onupgradeneeded=()=>r.result.createObjectStore('h'); r.onsuccess=()=>res(r.result); r.onerror=()=>rej(r.error); }); }
+async function _idbSet(k,v){ try{ const db=await _idb(); await new Promise((res,rej)=>{ const t=db.transaction('h','readwrite'); t.objectStore('h').put(v,k); t.oncomplete=res; t.onerror=()=>rej(t.error); }); }catch(e){ console.warn('idb set',e); } }
+async function _idbGet(k){ try{ const db=await _idb(); return await new Promise((res,rej)=>{ const t=db.transaction('h','readonly'); const q=t.objectStore('h').get(k); q.onsuccess=()=>res(q.result||null); q.onerror=()=>rej(q.error); }); }catch(e){ return null; } }
+function fileStatusText(){ return _fsFile?('📄 '+_fsFile.name):(S.docTitle?'（未保存）':'（新規）'); }
+function updateFileBtn(){ const b=document.getElementById('btn-file'); if(b)b.title='ファイル '+fileStatusText()+'\n開く / 上書き保存 / 名前を付けて保存'; }
+async function _perm(h,mode){ if(!h||!h.queryPermission)return false;
+  if(await h.queryPermission({mode})==='granted')return true;
+  return (await h.requestPermission({mode}))==='granted'; }
+// 作業フォルダを取得（未設定なら選んでもらう）。ユーザー操作から呼ぶこと。
+async function ensureWorkDir(ask){
+  if(_fsDir && await _perm(_fsDir,'readwrite'))return _fsDir;
+  const saved=await _idbGet('dir');
+  if(saved && await _perm(saved,'readwrite')){ _fsDir=saved; return _fsDir; }
+  if(!ask)return null;
+  // 初回のみ：保存先フォルダを案内してから選んでもらう（ブラウザは自動でパスを開けないため）
+  return await new Promise(resolve=>{
+    showModal(`<h2>📁 保存先フォルダを選択</h2>
+      <div class="fg" style="font-size:12px;line-height:1.7">最初に一度だけ、保存先フォルダを選んでください。<br>次回からは自動で開きます。</div>
+      <div class="fg" style="font-size:12px;background:#fff;box-shadow:var(--w2k-field);padding:6px 8px;user-select:text">D:\\くろーどこーど\\関係性ジェネレーター\\<b>作成データ</b></div>
+      <div class="mact"><button class="btn btn-s" id="wd-cancel">キャンセル</button><button class="btn btn-p" id="wd-pick">フォルダを選択</button></div>`,()=>{
+      document.getElementById('wd-cancel').onclick=()=>{hideModal();resolve(null);};
+      document.getElementById('wd-pick').onclick=async()=>{
+        try{
+          const d=await window.showDirectoryPicker({mode:'readwrite'});
+          _fsDir=d; await _idbSet('dir',d); hideModal(); resolve(d);
+        }catch(e){ hideModal(); resolve(null); } // キャンセル
+      };
+    });
+  });
+}
+function docJson(){ saveActiveBoard(); return JSON.stringify(currentDocData(),null,2); }
+function defaultFileName(){
+  const safe=(S.docTitle||'').trim().replace(/[\\/:*?"<>|\n\r\t]/g,'_').replace(/\s+/g,'_').slice(0,80);
+  return (safe||'無題')+'.json';
+}
+async function writeTo(fh,text){ const w=await fh.createWritable(); await w.write(text); await w.close(); }
+// 上書き保存（開いているファイルが無ければ「名前を付けて保存」へ）
+async function fileSaveNow(){
+  if(!FS_SUPPORTED){ saveFile(); return; }
+  if(!_fsFile){ return fileSaveAs(); }
+  if(!await _perm(_fsFile,'readwrite')){ alert('保存の許可が得られませんでした。'); return; }
+  await writeTo(_fsFile,docJson());
+  setCloudStatus('💾 保存しました（'+_fsFile.name+'）'); updateFileBtn();
+}
+// 名前を付けて保存（作業フォルダに保存。フォルダ未設定ならまず選択）
+async function fileSaveAs(){
+  if(!FS_SUPPORTED){ saveFile(); return; }
+  const dir=await ensureWorkDir(true); if(!dir)return;
+  const name=prompt('ファイル名（作成データ フォルダに保存されます）', defaultFileName());
+  if(name===null)return;
+  let fn=(name||'').trim(); if(!fn)return;
+  if(!/\.json$/i.test(fn))fn+='.json';
+  try{
+    // 既存なら確認
+    let exists=false; try{ await dir.getFileHandle(fn); exists=true; }catch(e){}
+    if(exists && !confirm('「'+fn+'」は既にあります。上書きしますか？'))return;
+    const fh=await dir.getFileHandle(fn,{create:true});
+    await writeTo(fh,docJson());
+    _fsFile=fh; await _idbSet('file',fh);
+    if(!S.docTitle){ S.docTitle=fn.replace(/\.json$/i,''); const t=document.getElementById('doc-title'); if(t)t.value=S.docTitle; }
+    setCloudStatus('💾 保存しました（'+fn+'）'); updateFileBtn();
+  }catch(e){ alert('保存に失敗しました: '+e.message); }
+}
+// 作業フォルダ内の .json 一覧から選んで開く
+async function fileOpen(){
+  if(!FS_SUPPORTED){ document.getElementById('file-input').click(); return; }
+  const dir=await ensureWorkDir(true); if(!dir)return;
+  const files=[];
+  try{ for await(const [name,h] of dir.entries()){ if(h.kind==='file'&&/\.json$/i.test(name))files.push({name,h}); } }
+  catch(e){ alert('フォルダを読めませんでした: '+e.message); return; }
+  files.sort((a,b)=>a.name.localeCompare(b.name,'ja'));
+  if(!files.length){ alert('このフォルダに .json ファイルがありません。'); return; }
+  const rows=files.map((f,i)=>`<div class="sr-row fo-row" data-i="${i}" style="padding:7px 9px;border-bottom:1px solid rgba(255,255,255,.09);cursor:pointer">📄 ${esc(f.name)}</div>`).join('');
+  showModal(`<h2>📂 ファイルを開く</h2>
+    <div class="fg" style="font-size:11px;color:#9aa3b2">作成データ フォルダ内のファイル</div>
+    <div style="max-height:46vh;overflow-y:auto">${rows}</div>
+    <div class="mact"><button class="btn btn-s" id="fo-other">別のフォルダ…</button><button class="btn btn-p" onclick="hideModal()">キャンセル</button></div>`,()=>{
+    document.querySelectorAll('.fo-row').forEach(r=>r.onclick=async()=>{
+      const f=files[+r.dataset.i]; hideModal();
+      try{
+        const file=await f.h.getFile();
+        applyDocData(JSON.parse(await file.text()));
+        _fsFile=f.h; await _idbSet('file',f.h);
+        setCloudStatus('📂 開きました（'+f.name+'）'); updateFileBtn();
+      }catch(e){ alert('読み込みエラー: '+e.message); }
+    });
+    document.getElementById('fo-other').onclick=async()=>{ hideModal();
+      try{ const d=await window.showDirectoryPicker({mode:'readwrite'}); _fsDir=d; await _idbSet('dir',d); fileOpen(); }catch(e){}
+    };
+  });
+}
+async function fileNew(){
+  if(!confirm('新規作成します。現在の内容は破棄されます（保存していない変更は失われます）。'))return;
+  applyDocData({}); _fsFile=null; await _idbSet('file',null);
+  autosaveLocalNow(); setCloudStatus('📄 新規'); updateFileBtn();
+}
+function openFileMenu(ev){
+  const items=[
+    {icon:'📂',label:'開く…',action:fileOpen},
+    {icon:'💾',label:'上書き保存'+(_fsFile?'（'+_fsFile.name+'）':'（未保存）'),action:fileSaveNow},
+    {icon:'📝',label:'名前を付けて保存…',action:fileSaveAs},
+    'sep',
+    {icon:'🆕',label:'新規作成',action:fileNew},
+    {icon:'📁',label:'作業フォルダを変更…',action:async()=>{ try{ const d=await window.showDirectoryPicker({mode:'readwrite'}); _fsDir=d; await _idbSet('dir',d); alert('作業フォルダを設定しました。'); }catch(e){} }},
+  ];
+  if(!FS_SUPPORTED)items.push('sep',{icon:'⚠',label:'このブラウザは直接保存に非対応',action:()=>alert('Chrome / Edge で開くと、フォルダ内のファイルを直接開く・上書き保存できます。\n現在はダウンロード形式で保存されます。')});
+  const r=ev.currentTarget.getBoundingClientRect();
+  showCtx(r.left, r.bottom+4, items);
+}
+document.getElementById('btn-file').onclick=openFileMenu;
+// 前回の作業フォルダ／ファイルを復元（権限は操作時に再確認される）
+(async()=>{ if(!FS_SUPPORTED)return; _fsDir=await _idbGet('dir'); _fsFile=await _idbGet('file'); updateFileBtn(); })();
+
 // document title (top-left) → kept in S.docTitle and used as the save filename
 (function wireDocTitle(){
   const inp=document.getElementById('doc-title'); if(!inp)return;
