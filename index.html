@@ -14,6 +14,7 @@ body{font-family:'Segoe UI',Meiryo,sans-serif;background:#0d0d1a;color:#e0e0e0;o
 /* ── MENUBAR ── */
 #menubar{background:linear-gradient(135deg,#12122a,#1a1a3e);border-bottom:2px solid #2a2a5a;padding:5px 10px;display:flex;align-items:center;gap:6px;flex-shrink:0;z-index:200;flex-wrap:wrap}
 #app-title{font-size:16px;font-weight:bold;color:#c8a8ff;white-space:nowrap;letter-spacing:.05em}
+#app-ver{font-size:11px;color:#7a7aae;white-space:nowrap;align-self:center;letter-spacing:.03em}
 .menu-break{flex-basis:100%;width:100%;height:0;margin:0;padding:0} /* forces the title onto its own row */
 /* document title: prominent. empty (placeholder shown) or focused → boxed input; filled & resting → just big text */
 #doc-title{background:transparent;border:1px solid transparent;border-radius:6px;color:#fff;font-size:15px;font-weight:700;letter-spacing:.02em;padding:5px 9px;max-width:300px;width:auto;min-width:110px;font-family:inherit;outline:none;text-shadow:0 1px 4px rgba(0,0,0,.35);transition:background .15s,border-color .15s}
@@ -87,7 +88,7 @@ body.filemenu-open #menu-backdrop{display:block}
 #svg-layer .ahit{pointer-events:stroke;cursor:pointer}
 #svg-layer .avis{pointer-events:none}
 #temp-arrow{pointer-events:none}
-#elems{position:absolute;top:0;left:0}
+#elems{position:absolute;top:0;left:0;--inv:1} /* --inv = 1/カード拡大率。バッジ類はこれで逆スケールし、カードを拡大しても一定の大きさを保つ */
 
 /* ── ZONES (svg) ── */
 
@@ -126,18 +127,18 @@ body.filemenu-open #menu-backdrop{display:block}
 .desc-box.dragging{border-style:solid;border-color:#c8a8ff}
 .layer-tag{font-weight:bold;cursor:pointer;pointer-events:auto;text-decoration:underline;text-underline-offset:2px}
 .layer-tag:hover{filter:brightness(1.25)}
-.card-add-btn{position:absolute;top:-10px;right:-10px;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
+.card-add-btn{position:absolute;top:calc(-10px * var(--inv));right:calc(-10px * var(--inv));transform:scale(var(--inv));transform-origin:top right;width:22px;height:22px;background:#4a9eff;border-radius:50%;display:flex;align-items:center;justify-content:center;cursor:pointer;font-size:13px;font-weight:bold;color:#fff;z-index:20;border:2px solid #0d0d1a;transition:background .15s;line-height:1}
 .card.link-node{outline:2px dashed rgba(255,255,255,.55);outline-offset:2px}
-.link-badge{position:absolute;bottom:-11px;left:-11px;width:25px;height:25px;background:#f0a02a;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:bold;color:#1a1208;z-index:21;border:2px solid #0d0d1a;box-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1} /* 左下（右下はリサイズハンドル用） */
+.link-badge{position:absolute;bottom:calc(-11px * var(--inv));left:calc(-11px * var(--inv));transform:scale(var(--inv));transform-origin:bottom left;width:25px;height:25px;background:#f0a02a;border-radius:50%;display:none;align-items:center;justify-content:center;cursor:pointer;font-size:14px;font-weight:bold;color:#1a1208;z-index:21;border:2px solid #0d0d1a;box-shadow:0 1px 6px rgba(0,0,0,.55);line-height:1} /* 左下（右下はリサイズハンドル用） */
 .card.link-node .link-badge{display:flex}
 /* 右下リサイズハンドル（全オブジェクト共通） */
-.rsz{position:absolute;right:-8px;bottom:-8px;width:16px;height:16px;border-radius:4px;background:#1e1e4a;border:1.5px solid #8a8aff;cursor:nwse-resize;z-index:26;display:none;box-shadow:0 1px 4px rgba(0,0,0,.5)}
+.rsz{position:absolute;right:calc(-8px * var(--inv));bottom:calc(-8px * var(--inv));transform:scale(var(--inv));transform-origin:bottom right;width:16px;height:16px;border-radius:4px;background:#1e1e4a;border:1.5px solid #8a8aff;cursor:nwse-resize;z-index:26;display:none;box-shadow:0 1px 4px rgba(0,0,0,.5)}
 .rsz::after{content:'';position:absolute;right:3px;bottom:3px;width:6px;height:6px;border-right:2px solid #c8c8ff;border-bottom:2px solid #c8c8ff}
 .card:hover>.rsz,.branch:hover>.rsz,.subtitle:hover>.rsz,.imgel:hover>.rsz,.desc-box:hover>.rsz{display:block}
-@media (pointer:coarse){.rsz{display:block;width:24px;height:24px;right:-11px;bottom:-11px}} /* タッチ端末では常時表示 */
+@media (pointer:coarse){.rsz{display:block;width:24px;height:24px;right:calc(-11px * var(--inv));bottom:calc(-11px * var(--inv))}} /* タッチ端末では常時表示 */
 .card-add-btn:hover{background:#2277cc}
 /* "key" marker badge shown on flagged objects */
-.key-badge{position:absolute;top:-18px;left:-18px;width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#16162e;border:2.5px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 11px rgba(245,197,24,.45);line-height:1}
+.key-badge{position:absolute;top:calc(-18px * var(--inv));left:calc(-18px * var(--inv));transform:scale(var(--inv));transform-origin:top left;width:46px;height:46px;display:flex;align-items:center;justify-content:center;font-size:24px;background:#16162e;border:2.5px solid #f5c518;border-radius:50%;z-index:22;pointer-events:none;box-shadow:0 1px 6px rgba(0,0,0,.6),0 0 11px rgba(245,197,24,.45);line-height:1}
 /* arrow key badge: positioned at the arrow midpoint (just above the label), same badge style */
 .akey-badge{transform:translate(-50%,calc(-100% - 14px))}
 .card.shape-circle{border-radius:50%;width:110px;height:110px;padding:8px}
@@ -149,7 +150,7 @@ body.filemenu-open #menu-backdrop{display:block}
 .branch:hover{box-shadow:0 0 0 2px rgba(255,255,255,.5)}
 .branch.selected{box-shadow:0 0 0 3px #fff,0 0 20px rgba(255,200,60,.6)!important}
 .branch.conn-target{box-shadow:0 0 0 3px #4affaa,0 0 20px rgba(74,255,170,.4)!important;cursor:crosshair}
-.branch .card-add-btn{top:-8px;right:-8px;width:18px;height:18px;font-size:11px}
+.branch .card-add-btn{top:calc(-8px * var(--inv));right:calc(-8px * var(--inv));width:18px;height:18px;font-size:11px}
 .branch-label{position:absolute;top:calc(100% + 4px);left:50%;transform:translateX(-50%);font-size:11px;font-weight:bold;color:#fff;white-space:pre;text-align:center;text-shadow:0 1px 3px rgba(0,0,0,.8);pointer-events:none}
 
 /* ── ARROW LABELS ── */
@@ -265,7 +266,7 @@ body.filemenu-open #menu-backdrop{display:block}
   .clue-item .clue-thumb{width:22px;height:22px;font-size:13px}
   .q-del{opacity:.8}  /* always show delete on touch (no hover) */
   .modal{width:94vw}
-  .card-add-btn{width:32px;height:32px;font-size:18px;top:-14px;right:-14px}
+  .card-add-btn{width:32px;height:32px;font-size:18px;top:calc(-14px * var(--inv));right:calc(-14px * var(--inv))}
   /* bigger default canvas text on mobile for readability (subtitles keep their own size) */
   .alabel{font-size:24px;padding:6px 14px;border-radius:18px}
   .branch-label{font-size:22px}
@@ -419,6 +420,7 @@ input[type=checkbox],input[type=range]{accent-color:var(--w2k-sel)!important}
 /* ── メニューバー＝クラシックなツールバー ── */
 #menubar{background:var(--w2k-face)!important;border:0!important;border-bottom:1px solid var(--w2k-shadow)!important;box-shadow:inset 0 1px #fff,inset 0 -1px var(--w2k-light)!important;padding:3px 5px!important;gap:3px!important}
 #app-title{color:#000!important;text-shadow:none!important;font-weight:bold!important}
+#app-ver{color:#555!important;text-shadow:none!important}
 /* ドキュメントタイトル＝白い沈み込みフィールド */
 #doc-title,#doc-title:placeholder-shown,#doc-title:hover:not(:focus),#doc-title:focus{background:#fff!important;color:#000!important;border:0!important;border-radius:0!important;box-shadow:var(--w2k-field)!important;text-shadow:none!important;font-weight:bold!important;padding:3px 6px!important}
 #doc-title::placeholder{color:var(--w2k-shadow)!important}
@@ -517,6 +519,7 @@ input[type=checkbox],input[type=range]{accent-color:var(--w2k-sel)!important}
 <div id="menubar">
   <button class="mbtn" id="btn-file" title="ファイル（開く / 上書き保存 / 名前を付けて保存）">📁 ファイル ▾</button>
   <span id="app-title">🔍 ClueBoard</span>
+  <span id="app-ver">v1.0.1</span>
   <input id="doc-title" placeholder="タイトルを入力" title="この図のタイトル（保存時のファイル名になります）" maxlength="80">
   <div class="menu-sep"></div>
   <button class="mbtn" id="btn-chapter" title="章モードの切替・追加（クリック）">📖 1章 ▾</button>
@@ -2054,6 +2057,8 @@ function updateCardEl(el,card){
   const _sc=(card.scale&&card.scale!==1)?`scale(${card.scale})`:'';
   const _rt=S.boardMode?('rotate('+boardTilt(card.id).toFixed(2)+'deg) '):''; // 捜査ボード：紙の傾き
   el.style.transform=(_rt+_sc).trim();
+  // 🔑/＋/↗/リサイズハンドルは拡大率の逆数で打ち消し、カードを拡大しても常に同じ大きさで表示する
+  el.style.setProperty('--inv', (1/(card.scale||1)).toFixed(4));
   el.className='card shape-'+card.shape+' attr-'+attrOf(card);el.dataset.id=card.id; // 属性クラス（捜査ボードの見た目テンプレが参照）
   el.style.background=card.color||'#9b59b6';
   el.style.boxShadow=`0 6px 24px ${hexAlpha(card.color||'#9b59b6',.5)}`;
@@ -2145,6 +2150,7 @@ function updateBranchEl(el,br){
   el.style.boxShadow=`0 4px 16px ${hexAlpha(br.color||'#f0c040',.5)}`;
   el.style.transformOrigin='center center';
   el.style.transform=(br.scale&&br.scale!==1)?`scale(${br.scale})`:'';
+  el.style.setProperty('--inv', (1/(br.scale||1)).toFixed(4)); // バッジ類はカード同様、拡大しても一定サイズ
   el.querySelector('.branch-icon').textContent=br.icon||'⑂';
   el.querySelector('.branch-label').textContent=br.name||'';
   setKeyBadge(el,br.key);
